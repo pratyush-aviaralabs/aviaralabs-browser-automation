@@ -18,6 +18,17 @@ def test_search_finds_single_inventory_match_and_clicks_into_it(fake_driver_one_
     assert INVENTORY_ROW_SELECTOR in fake_driver_one_inventory_match.clicks
 
 
+def test_search_waits_for_dropdown_before_reading_it(fake_driver_dropdown_renders_late):
+    # Must NOT read find_all_text() before waiting for the dropdown to
+    # actually render — see the fixture's docstring for the live bug this
+    # models.
+    result = SearchInvoiceTool().run(
+        fake_driver_dropdown_renders_late, vin="1FTFW1E81NFAG16336", stock_number=None
+    )
+    assert result.status == ToolStatus.SUCCESS
+    assert result.data["match_type"] == "inventory"
+
+
 def test_search_falls_back_to_deal_block_when_no_inventory_row(fake_driver_only_deal_match):
     result = SearchInvoiceTool().run(
         fake_driver_only_deal_match, vin="1FTFW1E81NFAG16336", stock_number=None

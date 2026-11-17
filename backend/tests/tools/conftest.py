@@ -112,6 +112,34 @@ def fake_driver_one_inventory_match() -> FakeBrowserDriver:
 
 
 @pytest.fixture
+def fake_driver_dropdown_renders_late() -> FakeBrowserDriver:
+    """Reproduces the exact live bug: find_all_text() is a single-shot
+    read, not a poll — calling it immediately after fill(), with no wait
+    in between, can read the dropdown before Angular has rendered it.
+    Here, find_all_text() returns nothing UNTIL wait_visible() has been
+    called at least once (modeling the real render completing during
+    that wait) — a caller that reads before waiting sees an empty
+    dropdown and wrongly concludes 'not found'."""
+    driver = FakeBrowserDriver()
+    state = {"waited": False}
+
+    def on_wait_visible(_sel: str, _timeout_ms: int) -> bool:
+        state["waited"] = True
+        return True
+
+    def on_find_all_text(selector: str) -> list[str]:
+        if not state["waited"]:
+            return []
+        if selector == INVENTORY_ROW_SELECTOR:
+            return ["2022 FORD F150 ... Last 6 VIN: G16336"]
+        return []
+
+    driver.on_wait_visible = on_wait_visible
+    driver.on_find_all_text = on_find_all_text
+    return driver
+
+
+@pytest.fixture
 def fake_driver_falls_back_to_stock_number() -> FakeBrowserDriver:
     """VIN tier finds nothing in either block; stock-number tier finds a
     single Inventory match. Proves the two-tier fallback actually tries

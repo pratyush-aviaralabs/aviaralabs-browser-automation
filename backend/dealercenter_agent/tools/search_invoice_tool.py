@@ -57,6 +57,15 @@ class SearchInvoiceTool(Tool):
     def _search_once(self, driver: BrowserDriver, query: str) -> ToolResult | None:
         driver.fill(SEARCH_BOX_SELECTOR, query)
 
+        # The dropdown renders asynchronously after typing — find_all_text()
+        # is a single-shot read, not a poll, so calling it immediately after
+        # fill() races the render and reads an empty dropdown every time,
+        # regardless of whether the row selectors are correct. Wait for
+        # EITHER row type to actually appear (or genuinely time out) before
+        # reading either result set. Same bug class as LoginTool's redirect
+        # race and dismiss_blocking_modals' async-modal race.
+        driver.wait_visible(f"{INVENTORY_ROW_SELECTOR}, {DEAL_ROW_SELECTOR}", timeout_ms=8000)
+
         inventory_rows = driver.find_all_text(INVENTORY_ROW_SELECTOR)
         if len(inventory_rows) > 1:
             raise StepFailure(
