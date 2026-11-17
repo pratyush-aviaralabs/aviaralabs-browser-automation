@@ -14,6 +14,7 @@ from dealercenter_agent.tools.search_invoice_tool import (
     SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
 from dealercenter_agent.tools.cost_add_tool import EXISTING_MEMO_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
+from dealercenter_agent.tools.file_upload_tool import EXISTING_FILE_NAME_SELECTOR
 
 from ..fakes import FakeBrowserDriver
 
@@ -187,6 +188,29 @@ def fake_driver_cost_add_ambiguous_vendor() -> FakeBrowserDriver:
 
 @pytest.fixture
 def fake_driver_cost_add_modal_never_opens() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: False
+    return driver
+
+
+@pytest.fixture
+def fake_driver_no_matching_files() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True
+    driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Monson 00294"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_duplicate_file() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True
+    driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Omaha Glass 276289"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_files_tab_never_loads() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.on_wait_visible = lambda sel, t: False
     return driver

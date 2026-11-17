@@ -46,6 +46,12 @@ class BrowserDriver(ABC):
         ...
 
     @abstractmethod
+    def upload_file(self, selector: str, file_path: str) -> None:
+        """Set a file input's value directly — never via Browse-dialog
+        clicks, which aren't automatable the same way across engines."""
+        ...
+
+    @abstractmethod
     def get_text(self, selector: str) -> str: ...
 
     @abstractmethod

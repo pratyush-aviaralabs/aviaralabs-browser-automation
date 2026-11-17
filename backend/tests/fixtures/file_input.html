@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+<body>
+  <input type="file" id="f">
+  <script>
+    document.getElementById('f').addEventListener('change', () => {
+      window.__uploaded_name__ = document.getElementById('f').files[0].name;
+    });
+  </script>
+</body>
+</html>

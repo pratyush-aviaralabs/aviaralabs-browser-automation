@@ -19,6 +19,7 @@ class FakeBrowserDriver(BrowserDriver):
         self.get_text_value = ""
         self.find_all_text_results: dict[str, list[str]] = {}
         self.select_calls: list[tuple[str, str]] = []
+        self.uploaded_files: list[tuple[str, str]] = []
         self.on_click_submit_near: Callable[[str], None] | None = None
         self.on_wait_visible: Callable[[str, int], bool] | None = None
         self.on_find_all_text: Callable[[str], list[str]] | None = None
@@ -61,6 +62,9 @@ class FakeBrowserDriver(BrowserDriver):
 
     def select_option(self, trigger_selector: str, option_text: str) -> None:
         self.select_calls.append((trigger_selector, option_text))
+
+    def upload_file(self, selector: str, file_path: str) -> None:
+        self.uploaded_files.append((selector, file_path))
 
     def save_session(self) -> dict:
         return {"cookies": [], "origins": []}

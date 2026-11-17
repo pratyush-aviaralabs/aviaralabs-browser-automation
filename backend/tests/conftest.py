@@ -40,3 +40,8 @@ def rows_fixture_url() -> str:
 @pytest.fixture
 def dropdown_fixture_url() -> str:
     return (FIXTURES_DIR / "dropdown.html").as_uri()
+
+
+@pytest.fixture
+def file_input_fixture_url() -> str:
+    return (FIXTURES_DIR / "file_input.html").as_uri()
