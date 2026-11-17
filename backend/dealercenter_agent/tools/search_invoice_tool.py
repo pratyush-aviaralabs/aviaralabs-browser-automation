@@ -150,7 +150,15 @@ class SearchInvoiceTool(Tool):
             driver.click(SEARCH_RESULT_ROW_SELECTOR)
             if not driver.wait_visible(DEAL_DETAILS_MODAL_SELECTOR, timeout_ms=15000):
                 raise StepFailure(self.name, "clicked Deal match but Deal Details modal did not open")
-            driver.click(DEAL_DETAILS_VEHICLE_LINK_SELECTOR)
+            # force_click, not click — confirmed live (2026-11-18): the
+            # locator resolves to exactly the right <a> (confirmed via
+            # Playwright's own log), but its plain visibility check
+            # disagrees with what's actually on screen — same class of
+            # Playwright-heuristic-vs-real-rendering mismatch already
+            # hit with the Cost Adds Save button, likely because this
+            # <a> wraps a <span class="d-block"> child rather than
+            # being block-level itself.
+            driver.force_click(DEAL_DETAILS_VEHICLE_LINK_SELECTOR)
             if not driver.wait_visible(EDIT_VEHICLE_MODAL_SELECTOR, timeout_ms=15000):
                 raise StepFailure(
                     self.name, "clicked the vehicle link in Deal Details but Edit Vehicle modal did not open"
