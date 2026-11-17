@@ -6,6 +6,7 @@ import pytest
 from dealercenter_agent.tools.base import StepFailure, ToolStatus
 from dealercenter_agent.tools.cost_add_tool import (
     COST_ADDS_LINK_SELECTOR,
+    MODAL_OPEN_SELECTOR,
     NEW_ROW_COST_SELECTOR,
     NEW_ROW_DATE_SELECTOR,
     NEW_ROW_CATEGORY_SELECTOR,
@@ -137,6 +138,9 @@ def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_du
     )
     assert result.status == ToolStatus.SUCCESS
     assert SAVE_BUTTON_SELECTOR in driver.clicks
+    # Must click Add New first to get a definitely-fresh row, not trust
+    # whatever the default last row already held.
+    assert driver.clicks.count(MODAL_OPEN_SELECTOR) == 1
 
 
 def test_cost_add_duplicate_check_ignores_spaces(fake_driver_cost_add_duplicate_memo):

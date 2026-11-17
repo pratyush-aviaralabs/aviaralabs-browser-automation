@@ -36,7 +36,13 @@ MODAL_OPEN_SELECTOR = "button:has-text('Add New')"
 # confirmed every existing row shows Description == Category (e.g.
 # "Repair"/"Repair", "Parts"/"Parts"), so Description auto-fills from
 # the Category selection and is never set directly.
-NEW_ROW_CATEGORY_SELECTOR = "tr:last-child .category-col input.k-input-inner"
+# The Category <kendo-combobox>'s own searchbar <input> is readonly and
+# a plain click() on it does not reliably trigger Kendo's popup-open
+# behavior (confirmed live 2026-11-18: automated click() on the input
+# left the dropdown closed, 30s get_by_text timeout; a manual click —
+# presumably landing on the component's own toggle button — opened it
+# fine). Target that dedicated toggle button instead.
+NEW_ROW_CATEGORY_SELECTOR = "tr:last-child .category-col button[aria-label='Select']"
 NEW_ROW_COST_SELECTOR = "tr:last-child .cost-col input.k-input-inner"
 NEW_ROW_DATE_SELECTOR = "tr:last-child .date-added-col input.k-input-inner"
 NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR = "tr:last-child .vendor-col button[title='Search']"
@@ -105,6 +111,13 @@ class CostAddTool(Tool):
             target = _normalize_memo(memo)
             if any(_normalize_memo(m) == target for m in existing_memos if m.strip()):
                 return ToolResult(status=ToolStatus.EXISTS, data={"memo": memo})
+        else:
+            # Forcing the write path deliberately (manual testing only) —
+            # click Add New first so we fill a fresh, definitely-blank
+            # row instead of trusting whatever the default last row
+            # currently holds. NEW_ROW_* selectors target tr:last-child,
+            # which becomes this new row once it's appended.
+            driver.click(MODAL_OPEN_SELECTOR)
 
         # Description has no formcontrolname of its own — every existing
         # row shows it mirroring Category, so setting Category alone is
