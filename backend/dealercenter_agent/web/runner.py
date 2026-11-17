@@ -111,17 +111,38 @@ def _log(emit: EventSink, tool: str, status: str, data: dict | None = None, reas
     )
 
 
-def _login(driver, emit: EventSink, mfa_waiter: MfaWaiter) -> bool:
+def _run_step(emit: EventSink, tool_name: str, fn):
+    """Runs one tool call, catching StepFailure AND any other exception —
+    a raw Playwright TimeoutError from an unverified placeholder selector
+    is exactly as likely as a StepFailure at this stage, and letting
+    either one escape uncaught crashes the whole thread before the
+    interactive loop gets a chance to run, which silently throws away
+    the 'stay open for inspection' guarantee the rest of this module
+    exists to provide. Returns the ToolResult, or None on any failure."""
     try:
-        login_result = LoginTool().run(
+        result = fn()
+        _log(emit, tool_name, result.status, result.data, result.reason)
+        return result
+    except StepFailure as exc:
+        _log(emit, tool_name, "failed", reason=exc.reason)
+        return None
+    except Exception as exc:
+        _log(emit, tool_name, "failed", reason=f"unexpected error: {exc}")
+        return None
+
+
+def _login(driver, emit: EventSink, mfa_waiter: MfaWaiter) -> bool:
+    result = _run_step(
+        emit,
+        "LoginTool",
+        lambda: LoginTool().run(
             driver,
             username=os.environ["DEALER_CENTER_USERNAME"],
             password=os.environ["DEALER_CENTER_PASSWORD"],
             mfa_code_provider=mfa_waiter,
-        )
-        _log(emit, "LoginTool", login_result.status, login_result.data)
-    except StepFailure as exc:
-        _log(emit, "LoginTool", "failed", reason=exc.reason)
+        ),
+    )
+    if result is None:
         return False
     _save_state(driver.save_session())
     return True
@@ -176,43 +197,56 @@ def run_pipeline(
     stop_event: threading.Event,
 ) -> None:
     with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
-        cdp = _start_screencast(driver.page, emit)
+        try:
+            cdp = _start_screencast(driver.page, emit)
+        except Exception as exc:
+            # No CDP session to hand to the interactive loop — this is
+            # the one failure mode that genuinely can't stay open for
+            # inspection, since there's no screencast to show.
+            _log(emit, "ScreencastSetup", "failed", reason=str(exc))
+            emit({"type": "done"})
+            return
 
-        if _login(driver, emit, mfa_waiter):
-            try:
-                search_result = SearchInvoiceTool().run(driver, vin=vin, stock_number=stock_number)
-                _log(emit, "SearchInvoiceTool", search_result.status, search_result.data)
+        try:
+            if _login(driver, emit, mfa_waiter):
+                search_result = _run_step(
+                    emit,
+                    "SearchInvoiceTool",
+                    lambda: SearchInvoiceTool().run(driver, vin=vin, stock_number=stock_number),
+                )
 
-                if search_result.data.get("match_type") != "inventory":
+                if search_result is not None and search_result.data.get("match_type") != "inventory":
                     _log(
                         emit,
                         "SearchInvoiceTool",
                         "stopped",
                         reason="Deal-path click-through isn't built yet",
                     )
-                else:
+                elif search_result is not None:
                     file_name = f"{vendor_name.split()[0]} {invoice_number}"
-                    try:
-                        upload_result = FileUploadTool().run(
+                    upload_result = _run_step(
+                        emit,
+                        "FileUploadTool",
+                        lambda: FileUploadTool().run(
                             driver,
                             local_pdf_path=local_pdf_path,
                             file_name=file_name,
                             invoice_number=invoice_number,
-                        )
-                        _log(emit, "FileUploadTool", upload_result.status, upload_result.data)
+                        ),
+                    )
 
-                        if upload_result.status == ToolStatus.SUCCESS:
-                            verify_result = VerifyFileUploadTool().run(driver, file_name=file_name)
-                            _log(
-                                emit,
-                                "VerifyFileUploadTool",
-                                verify_result.status,
-                                reason=verify_result.reason,
-                            )
-                    except StepFailure as exc:
-                        _log(emit, "FileUploadTool", "failed", reason=exc.reason)
-            except StepFailure as exc:
-                _log(emit, "SearchInvoiceTool", "failed", reason=exc.reason)
+                    if upload_result is not None and upload_result.status == ToolStatus.SUCCESS:
+                        _run_step(
+                            emit,
+                            "VerifyFileUploadTool",
+                            lambda: VerifyFileUploadTool().run(driver, file_name=file_name),
+                        )
+        except Exception as exc:
+            # Belt-and-suspenders: _run_step already catches every
+            # per-tool failure, so reaching here means a bug in this
+            # glue code itself, not a tool. Still must not skip the
+            # interactive loop below.
+            _log(emit, "Pipeline", "failed", reason=f"unexpected error: {exc}")
 
         emit({"type": "done"})
         # Stay open on whatever page the run ended on — success or
