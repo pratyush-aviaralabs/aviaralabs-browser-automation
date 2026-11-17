@@ -53,6 +53,16 @@ DEAL_DETAILS_VEHICLE_LINK_SELECTOR = (
 # only gets switched on AFTER this confirms, so every earlier check in
 # this method still correctly targets the top-level page).
 EDIT_VEHICLE_MODAL_SELECTOR = f"iframe={DEAL_CONTRACT_IFRAME_SELECTOR} >> text=/Edit Vehicle/i"
+# Confirmed live (2026-11-18): "Edit Vehicle"'s own title lives in
+# DEAL_CONTRACT_IFRAME_SELECTOR, but its CONTENT (Cost Info/Cost Adds,
+# everything CostAddTool/FileUploadTool touch) does not —
+# doc.body.innerText there is missing "Cost Adds" entirely. It's one
+# level deeper: an id-less nested <iframe> inside that one, whose src
+# contains "vehicle/detail" — literally the same route/component the
+# Inventory path's own page uses (?sourcePath=2&openInPopup=true
+# appended). No static id exists to select it by, so this matches on
+# the src substring instead.
+DEAL_VEHICLE_DETAIL_IFRAME_SELECTOR = "iframe[src*='vehicle/detail']"
 
 
 def _read_rows_with_retry(driver: BrowserDriver, selector: str, attempts: int = 3, delay_ms: int = 300) -> list[str]:
@@ -178,12 +188,21 @@ class SearchInvoiceTool(Tool):
                 )
             # From here on, every downstream Tool (CostAddTool,
             # FileUploadTool, ...) needs to resolve its selectors
-            # inside this same iframe — confirmed live (2026-11-18)
-            # that the ENTIRE Edit Vehicle surface, not just its own
-            # title text, lives there. enter_iframe() makes every
-            # subsequent selector-based call on this driver transparent
-            # to that, with zero changes needed in any other Tool.
+            # nested TWO iframe levels deep — confirmed live
+            # (2026-11-18) that Edit Vehicle's own title lives in the
+            # first level, but its actual content (Cost Info/Cost
+            # Adds) is one level deeper still. Each enter_iframe() call
+            # pushes one more level; every subsequent selector-based
+            # call on this driver becomes transparent to that, with
+            # zero changes needed in any other Tool.
             driver.enter_iframe(DEAL_CONTRACT_IFRAME_SELECTOR)
+            driver.enter_iframe(DEAL_VEHICLE_DETAIL_IFRAME_SELECTOR)
+            if not driver.wait_visible(VEHICLE_DETAIL_LOADED_SELECTOR, timeout_ms=15000):
+                raise StepFailure(
+                    self.name,
+                    "entered the Deal's nested vehicle-detail iframe but its content "
+                    "(Cost Info) never loaded",
+                )
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 data={"match_type": "deal", "row_text": deal_rows[0], "query": query},

@@ -29,36 +29,43 @@ class PlaywrightDriver(BrowserDriver):
 
     def __init__(self, page: Page):
         self.page = page
-        self._frame_selector: str | None = None
+        # A STACK, not a single value — confirmed live (2026-11-18)
+        # that a Deal's "Edit Vehicle" surface is nested TWO iframes
+        # deep (#dc-iframe-dialog, then an inner, id-less iframe whose
+        # src contains "vehicle/detail" — literally the same
+        # vehicle-detail route/component the Inventory path already
+        # uses). Each enter_iframe() call pushes one more level.
+        self._frame_selectors: list[str] = []
 
     def enter_iframe(self, selector: str) -> None:
-        self._frame_selector = selector
+        self._frame_selectors.append(selector)
 
     def exit_iframe(self) -> None:
-        self._frame_selector = None
+        self._frame_selectors = []
+
+    def _scope(self):
+        """The current resolution scope: the top-level page, or
+        however many iframe levels enter_iframe() has pushed, chained
+        via successive frame_locator() calls."""
+        scope = self.page
+        for frame_selector in self._frame_selectors:
+            scope = scope.frame_locator(frame_selector)
+        return scope
 
     def _locator(self, selector: str):
         """Resolves a selector to a Playwright Locator.
 
         Supports a reserved "iframe=<frame_selector> >> <inner_selector>"
-        prefix for a one-off selector that targets iframe content
-        regardless of the current enter_iframe() state. Otherwise, if
-        enter_iframe() has set a standing frame context, EVERY selector
-        resolves inside that frame instead of the top-level page —
-        confirmed live (2026-11-18) that DealerCenter renders a Deal's
-        entire "Edit Vehicle" surface (Cost Adds, vendor search, Save
-        Confirmation — everything CostAddTool/FileUploadTool touch)
-        inside a single <iframe id="dc-iframe-dialog">, which a plain
-        page.locator() can never reach regardless of selector
-        correctness. Falls back to the plain top-level page.locator()
-        when no frame context is active — the Inventory path's
-        behavior, unchanged."""
+        prefix for a one-off selector that targets a SINGLE iframe
+        level regardless of the current enter_iframe() stack.
+        Otherwise resolves against whatever the current scope is (see
+        _scope()) — the top-level page when no enter_iframe() has been
+        called (the Inventory path's behavior, unchanged), or chained
+        through however many iframe levels are currently active."""
         if selector.startswith("iframe="):
             frame_selector, inner_selector = selector[len("iframe="):].split(" >> ", 1)
             return self.page.frame_locator(frame_selector).locator(inner_selector)
-        if self._frame_selector is not None:
-            return self.page.frame_locator(self._frame_selector).locator(selector)
-        return self.page.locator(selector)
+        return self._scope().locator(selector)
 
     def goto(self, url: str) -> None:
         self.page.goto(url, wait_until="domcontentloaded")
@@ -155,12 +162,11 @@ class PlaywrightDriver(BrowserDriver):
 
     def select_option(self, trigger_selector: str, option_text: str) -> None:
         self._locator(trigger_selector).first.click()
-        # Not self.page.get_by_text() directly — must also respect an
-        # active enter_iframe() context, or Category selection breaks
-        # for anything inside a Deal's iframe (confirmed live
-        # 2026-11-18 that this whole surface lives in one).
-        scope = self.page.frame_locator(self._frame_selector) if self._frame_selector else self.page
-        scope.get_by_text(option_text, exact=True).first.click()
+        # Not self.page.get_by_text() directly — must also respect the
+        # active enter_iframe() stack, or Category selection breaks for
+        # anything inside a Deal's nested iframes (confirmed live
+        # 2026-11-18 that this whole surface lives two levels deep).
+        self._scope().get_by_text(option_text, exact=True).first.click()
 
     def upload_via_button(self, trigger_selector: str, file_path: str) -> None:
         with self.page.expect_file_chooser() as fc_info:

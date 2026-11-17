@@ -28,16 +28,22 @@ class FakeBrowserDriver(BrowserDriver):
         self.on_find_all_values: Callable[[str], list[str]] | None = None
         self.on_click: Callable[[str], None] | None = None
         self.on_wait_hidden: Callable[[str, int], bool] | None = None
-        self.frame_selector: str | None = None
+        self.frame_selectors: list[str] = []
+
+    @property
+    def frame_selector(self) -> str | None:
+        """Convenience for single-level tests — the last pushed level,
+        or None if the stack is empty."""
+        return self.frame_selectors[-1] if self.frame_selectors else None
 
     def goto(self, url: str) -> None:
         pass
 
     def enter_iframe(self, selector: str) -> None:
-        self.frame_selector = selector
+        self.frame_selectors.append(selector)
 
     def exit_iframe(self) -> None:
-        self.frame_selector = None
+        self.frame_selectors = []
 
     def current_url(self) -> str:
         return self.current_url_value

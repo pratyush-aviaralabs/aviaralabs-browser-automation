@@ -11,23 +11,28 @@ class BrowserDriver(ABC):
 
     @abstractmethod
     def enter_iframe(self, selector: str) -> None:
-        """From here on, every selector-based call (click, fill,
-        find_all_text, etc.) resolves inside the <iframe> matching
-        selector instead of the top-level page — until exit_iframe().
-        Confirmed live (2026-11-18): a Deal match's entire "Edit
-        Vehicle" surface (Cost Adds, vendor search, Save Confirmation —
-        everything CostAddTool/FileUploadTool touch) renders inside
-        DealerCenter's own <iframe id="dc-iframe-dialog">, while the
-        Inventory path's equivalent page never does. This lets
-        SearchInvoiceTool switch context once after landing on a Deal's
-        Edit Vehicle modal, so every downstream Tool keeps working
-        completely unchanged — none of their selectors need to know
-        whether they're inside an iframe or not."""
+        """Pushes one more iframe level: from here on, every
+        selector-based call (click, fill, find_all_text, etc.) resolves
+        inside the <iframe> matching selector, nested inside whatever
+        level(s) were already pushed — until exit_iframe(). Confirmed
+        live (2026-11-18): a Deal match's "Edit Vehicle" surface (Cost
+        Adds, vendor search, Save Confirmation — everything
+        CostAddTool/FileUploadTool touch) is nested TWO iframes deep
+        (DealerCenter's own <iframe id="dc-iframe-dialog">, then an
+        id-less inner iframe whose src contains "vehicle/detail" —
+        literally the same route the Inventory path's own page uses),
+        while the Inventory path never enters any iframe at all. This
+        lets SearchInvoiceTool switch context after landing on a
+        Deal's Edit Vehicle modal, so every downstream Tool keeps
+        working completely unchanged — none of their selectors need to
+        know whether they're inside an iframe or not, or how many
+        levels deep."""
         ...
 
     @abstractmethod
     def exit_iframe(self) -> None:
-        """Return to resolving selectors against the top-level page."""
+        """Clears the entire iframe stack — back to resolving selectors
+        against the top-level page."""
         ...
 
     @abstractmethod
