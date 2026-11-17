@@ -69,7 +69,7 @@ def test_cost_add_falls_back_to_first_word_when_full_name_search_finds_nothing(
 
     assert result.status == ToolStatus.SUCCESS
     assert "warnings" not in result.data
-    assert driver.filled[VENDOR_SEARCH_INPUT_SELECTOR] == "Jensen"
+    assert driver.typed[VENDOR_SEARCH_INPUT_SELECTOR] == "Jensen"
 
 
 def test_cost_add_rejects_unknown_category(fake_driver_cost_add_vendor_found):

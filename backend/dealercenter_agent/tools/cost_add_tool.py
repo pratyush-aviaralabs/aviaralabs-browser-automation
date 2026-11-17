@@ -387,8 +387,14 @@ class CostAddTool(Tool):
             return f"vendor selection failed ({exc}) — Vendor left unset"
 
     def _search_vendor_candidates(self, driver: BrowserDriver, query: str) -> list[str]:
+        # type_text, not fill — confirmed live (2026-11-18) that fill()
+        # sets the DOM value directly without firing the real keystroke
+        # events this search's debounce listens for, so typing "jen" by
+        # hand showed a loading spinner and got results, but fill()ing
+        # the same text triggered no search at all (list stayed
+        # unfiltered, 1-98 of 98).
         before_count = len(driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR))
-        driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
+        driver.type_text(VENDOR_SEARCH_INPUT_SELECTOR, query)
         return _read_vendor_results_with_retry(driver, before_count)
 
     def _close_vendor_dialog(self, driver: BrowserDriver) -> None:

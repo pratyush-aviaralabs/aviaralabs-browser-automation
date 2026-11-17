@@ -215,7 +215,7 @@ def _vendor_dialog_driver(results_by_query) -> FakeBrowserDriver:
         state["calls"] += 1
         if state["calls"] == 1:
             return [f"UNFILTERED VENDOR {i}" for i in range(98)]
-        return resolve(driver.filled.get(VENDOR_SEARCH_INPUT_SELECTOR, ""))
+        return resolve(driver.typed.get(VENDOR_SEARCH_INPUT_SELECTOR, ""))
 
     def on_click(selector: str) -> None:
         if "mb-2" in selector:
