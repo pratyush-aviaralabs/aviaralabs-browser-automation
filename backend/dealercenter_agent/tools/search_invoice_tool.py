@@ -20,12 +20,19 @@ VEHICLE_DETAIL_LOADED_SELECTOR = "text=/Cost Info/i"
 # Confirmed live (2026-11-18): clicking a Deal row opens a "Deal
 # Details" modal (title "Deal Details - <id> <customer name>").
 DEAL_DETAILS_MODAL_SELECTOR = "text=/Deal Details/i"
-# UNVERIFIED — the vehicle's own name/link inside the Deal Details
-# modal (e.g. "2022 Ford F150 Li...", next to a small vehicle
-# thumbnail icon) is what needs clicking next; anchored by XPath to
-# the "Deal Details" title the same way COST_ADDS_LINK_SELECTOR is
-# anchored to "Cost Adds", but not yet confirmed against the live DOM.
-DEAL_DETAILS_VEHICLE_LINK_SELECTOR = "text=/Deal Details/i >> xpath=following::a[1]"
+# Confirmed live (2026-11-18): the Deal Details dialog's own content
+# (where the vehicle quick-link lives) is rendered inside an
+# <iframe id="dc-iframe-dialog"> — a plain page-level selector can
+# never reach it regardless of correctness; Playwright requires an
+# explicit frame-scoped locator (see PlaywrightDriver._locator's
+# "iframe=" convention). The link itself: <a
+# dcuisharedstopclickpropagation href="#" target="_blank"
+# title="<dynamic vehicle name>"><span class="d-block"><dynamic
+# vehicle name></span></a> — anchored on the custom
+# dcuisharedstopclickpropagation attribute specifically because the
+# vehicle name/title text is dynamic per deal.
+DEAL_CONTRACT_IFRAME_SELECTOR = "#dc-iframe-dialog"
+DEAL_DETAILS_VEHICLE_LINK_SELECTOR = f"iframe={DEAL_CONTRACT_IFRAME_SELECTOR} >> a[dcuisharedstopclickpropagation]"
 # UNVERIFIED — clicking that link opens a further "Edit Vehicle" modal,
 # functionally identical in structure to the Inventory page's own
 # vehicle detail view (same Cost Info/Cost Adds section, same tabs:

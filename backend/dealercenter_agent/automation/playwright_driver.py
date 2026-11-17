@@ -30,6 +30,23 @@ class PlaywrightDriver(BrowserDriver):
     def __init__(self, page: Page):
         self.page = page
 
+    def _locator(self, selector: str):
+        """Resolves a selector to a Playwright Locator, transparently
+        supporting a reserved "iframe=<frame_selector> >> <inner_selector>"
+        convention for content inside an <iframe> — confirmed live
+        (2026-11-18) that DealerCenter renders a Deal's own contract
+        view (where the vehicle quick-link lives) inside an <iframe
+        id="dc-iframe-dialog">, which a plain page.locator() can never
+        reach regardless of selector correctness; Playwright requires
+        an explicit frame_locator() for that. Every other method here
+        routes through this instead of calling self.page.locator()
+        directly, so any selector in the codebase can opt into
+        targeting iframe content with the same convention."""
+        if selector.startswith("iframe="):
+            frame_selector, inner_selector = selector[len("iframe="):].split(" >> ", 1)
+            return self.page.frame_locator(frame_selector).locator(inner_selector)
+        return self.page.locator(selector)
+
     def goto(self, url: str) -> None:
         self.page.goto(url, wait_until="domcontentloaded")
 
@@ -37,16 +54,16 @@ class PlaywrightDriver(BrowserDriver):
         return self.page.url
 
     def fill(self, selector: str, value: str) -> None:
-        self.page.locator(selector).first.fill(value)
+        self._locator(selector).first.fill(value)
 
     def type_text(self, selector: str, text: str) -> None:
-        locator = self.page.locator(selector).first
+        locator = self._locator(selector).first
         locator.click()
         locator.press("Control+A")
         locator.press_sequentially(text)
 
     def click(self, selector: str) -> None:
-        self.page.locator(selector).first.click()
+        self._locator(selector).first.click()
 
     def force_click(self, selector: str) -> None:
         # click(force=True), NOT evaluate("el => el.click()") — confirmed
@@ -62,7 +79,7 @@ class PlaywrightDriver(BrowserDriver):
         # responsible for waiting out any real blocking overlay first
         # (see CostAddTool's wait_hidden on the dialog's own backdrop)
         # rather than relying on this to skip past a genuine blocker.
-        self.page.locator(selector).first.click(force=True)
+        self._locator(selector).first.click(force=True)
 
     def click_submit_near(self, field_selector: str) -> None:
         field = self.page.locator(field_selector).first
@@ -80,14 +97,14 @@ class PlaywrightDriver(BrowserDriver):
 
     def wait_visible(self, selector: str, timeout_ms: int = 2000) -> bool:
         try:
-            self.page.locator(selector).first.wait_for(state="visible", timeout=timeout_ms)
+            self._locator(selector).first.wait_for(state="visible", timeout=timeout_ms)
             return True
         except Exception:
             return False
 
     def wait_hidden(self, selector: str, timeout_ms: int = 2000) -> bool:
         try:
-            self.page.locator(selector).first.wait_for(state="hidden", timeout=timeout_ms)
+            self._locator(selector).first.wait_for(state="hidden", timeout=timeout_ms)
             return True
         except Exception:
             return False
@@ -124,22 +141,22 @@ class PlaywrightDriver(BrowserDriver):
             pass
 
     def select_option(self, trigger_selector: str, option_text: str) -> None:
-        self.page.locator(trigger_selector).first.click()
+        self._locator(trigger_selector).first.click()
         self.page.get_by_text(option_text, exact=True).first.click()
 
     def upload_via_button(self, trigger_selector: str, file_path: str) -> None:
         with self.page.expect_file_chooser() as fc_info:
-            self.page.locator(trigger_selector).first.click()
+            self._locator(trigger_selector).first.click()
         fc_info.value.set_files(file_path)
 
     def get_text(self, selector: str) -> str:
-        return self.page.locator(selector).first.inner_text()
+        return self._locator(selector).first.inner_text()
 
     def find_all_text(self, selector: str) -> list[str]:
-        return self.page.locator(selector).all_inner_texts()
+        return self._locator(selector).all_inner_texts()
 
     def find_all_values(self, selector: str) -> list[str]:
-        return self.page.locator(selector).evaluate_all("els => els.map(el => el.value)")
+        return self._locator(selector).evaluate_all("els => els.map(el => el.value)")
 
     def save_session(self) -> dict:
         return self.page.context.storage_state()
