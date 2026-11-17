@@ -32,7 +32,17 @@ DEAL_DETAILS_MODAL_SELECTOR = "text=/Deal Details/i"
 # dcuisharedstopclickpropagation attribute specifically because the
 # vehicle name/title text is dynamic per deal.
 DEAL_CONTRACT_IFRAME_SELECTOR = "#dc-iframe-dialog"
-DEAL_DETAILS_VEHICLE_LINK_SELECTOR = f"iframe={DEAL_CONTRACT_IFRAME_SELECTOR} >> a[dcuisharedstopclickpropagation]"
+# Confirmed live (2026-11-18): even force_click can't click the <a>
+# itself — "Element is not visible" persisted even with force=True,
+# meaning Playwright can't compute a click point at all (a zero-size
+# bounding box, not a skippable actionability check), apparently
+# because the <a> wraps a <span class="d-block"> child instead of
+# being block-level itself. Click that inner span instead — it's the
+# element that actually has real rendered dimensions — a click there
+# still bubbles up to the <a>'s own click handler/navigation.
+DEAL_DETAILS_VEHICLE_LINK_SELECTOR = (
+    f"iframe={DEAL_CONTRACT_IFRAME_SELECTOR} >> a[dcuisharedstopclickpropagation] span.d-block"
+)
 # UNVERIFIED — clicking that link opens a further "Edit Vehicle" modal,
 # functionally identical in structure to the Inventory page's own
 # vehicle detail view (same Cost Info/Cost Adds section, same tabs:
