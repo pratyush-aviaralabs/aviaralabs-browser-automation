@@ -9,8 +9,8 @@ from dealercenter_agent.tools.login_tool import (
     USERNAME_SELECTOR,
 )
 from dealercenter_agent.tools.search_invoice_tool import (
-    DEAL_ROW_SELECTOR,
-    INVENTORY_ROW_SELECTOR,
+    DEAL_DETAILS_MODAL_SELECTOR,
+    SEARCH_RESULT_ROW_SELECTOR,
     SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
 from dealercenter_agent.tools.cost_add_tool import (
@@ -127,7 +127,7 @@ def fake_driver_url_lags_behind_redirect() -> FakeBrowserDriver:
 @pytest.fixture
 def fake_driver_one_inventory_match() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
-    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["2022 FORD F150 ... Last 6 VIN: G16336"]
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = ["2022 FORD F150 ... Last 6 VIN: G16336"]
     driver.on_wait_visible = lambda sel, t: True  # vehicle detail page "loads" after the click
     return driver
 
@@ -151,7 +151,7 @@ def fake_driver_dropdown_renders_late() -> FakeBrowserDriver:
     def on_find_all_text(selector: str) -> list[str]:
         if not state["waited"]:
             return []
-        if selector == INVENTORY_ROW_SELECTOR:
+        if selector == SEARCH_RESULT_ROW_SELECTOR:
             return ["2022 FORD F150 ... Last 6 VIN: G16336"]
         return []
 
@@ -162,14 +162,14 @@ def fake_driver_dropdown_renders_late() -> FakeBrowserDriver:
 
 @pytest.fixture
 def fake_driver_falls_back_to_stock_number() -> FakeBrowserDriver:
-    """VIN tier finds nothing in either block; stock-number tier finds a
-    single Inventory match. Proves the two-tier fallback actually tries
-    tier 2 instead of stopping at tier 1's clean zero-match."""
+    """VIN tier finds nothing; stock-number tier finds a single
+    Inventory match. Proves the two-tier fallback actually tries tier 2
+    instead of stopping at tier 1's clean zero-match."""
     driver = FakeBrowserDriver()
 
     def on_find_all_text(selector: str) -> list[str]:
         last_query = driver.filled.get(SEARCH_INVOICE_BOX_SELECTOR)
-        if selector == INVENTORY_ROW_SELECTOR and last_query == "22421":
+        if selector == SEARCH_RESULT_ROW_SELECTOR and last_query == "22421":
             return ["2022 FORD F150 ... Stock #: 22421"]
         return []
 
@@ -180,24 +180,55 @@ def fake_driver_falls_back_to_stock_number() -> FakeBrowserDriver:
 
 @pytest.fixture
 def fake_driver_only_deal_match() -> FakeBrowserDriver:
+    """Confirmed live (2026-11-18): clicking the single Deal row opens
+    "Deal Details", then clicking the vehicle link inside it opens
+    "Edit Vehicle" — on_wait_visible=True models both succeeding."""
     driver = FakeBrowserDriver()
-    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = []
-    driver.find_all_text_results[DEAL_ROW_SELECTOR] = ["Deal #: 16228 ... Last 6 VIN: G16336"]
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = ["Deal #: 16228 ... Last 6 VIN: G16336"]
+    driver.on_wait_visible = lambda sel, t: True
+    return driver
+
+
+@pytest.fixture
+def fake_driver_deal_details_never_opens() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = ["Deal #: 16228 ... Last 6 VIN: G16336"]
+    driver.on_wait_visible = lambda sel, t: False
+    return driver
+
+
+@pytest.fixture
+def fake_driver_edit_vehicle_never_opens() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = ["Deal #: 16228 ... Last 6 VIN: G16336"]
+    driver.on_wait_visible = lambda sel, t: sel == DEAL_DETAILS_MODAL_SELECTOR
+    return driver
+
+
+@pytest.fixture
+def fake_driver_both_inventory_and_deal_match() -> FakeBrowserDriver:
+    """Confirmed required live (2026-11-18): when both an Inventory and
+    a Deal match turn up for the same query, hold and report both —
+    click into neither."""
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = [
+        "2022 FORD F150 ... Last 6 VIN: G16336",
+        "Deal #: 16228 ... Last 6 VIN: G16336",
+    ]
     return driver
 
 
 @pytest.fixture
 def fake_driver_no_matches() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
-    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = []
-    driver.find_all_text_results[DEAL_ROW_SELECTOR] = []
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = []
     return driver
 
 
 @pytest.fixture
 def fake_driver_two_inventory_matches() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
-    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["row one", "row two"]
+    driver.find_all_text_results[SEARCH_RESULT_ROW_SELECTOR] = ["row one", "row two"]
     return driver
 
 

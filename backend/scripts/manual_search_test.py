@@ -22,9 +22,8 @@ from dotenv import load_dotenv
 from dealercenter_agent.automation.playwright_driver import create_playwright_driver
 from dealercenter_agent.tools.login_tool import LoginTool
 from dealercenter_agent.tools.search_invoice_tool import (
-    DEAL_ROW_SELECTOR,
-    INVENTORY_ROW_SELECTOR,
     SEARCH_BOX_SELECTOR,
+    SEARCH_RESULT_ROW_SELECTOR,
     SearchInvoiceTool,
 )
 from dealercenter_agent.tools.base import StepFailure
@@ -61,19 +60,17 @@ def main():
 
         try:
             search_result = (
-                SearchInvoiceTool().run(driver, vin=None, po_number=None, stock_number=query)
+                SearchInvoiceTool().run(driver, vin=None, stock_number=query)
                 if len(query) < 10
-                else SearchInvoiceTool().run(driver, vin=query, po_number=None, stock_number=None)
+                else SearchInvoiceTool().run(driver, vin=query, stock_number=None)
             )
             print(f"[search] SUCCESS match_type={search_result.data['match_type']}")
             print(f"[search] row_text={search_result.data['row_text']!r}")
         except StepFailure as exc:
             print(f"[search] FAILED: {exc.reason}")
             print("\n--- Dumping raw dropdown DOM for selector debugging ---")
-            print("Inventory rows found with current selector"
-                  f" ({INVENTORY_ROW_SELECTOR!r}):", driver.find_all_text(INVENTORY_ROW_SELECTOR))
-            print("Deal rows found with current selector"
-                  f" ({DEAL_ROW_SELECTOR!r}):", driver.find_all_text(DEAL_ROW_SELECTOR))
+            print(f"Rows found with current selector ({SEARCH_RESULT_ROW_SELECTOR!r}):",
+                  driver.find_all_text(SEARCH_RESULT_ROW_SELECTOR))
             print("\nFull search box container text, for manually spotting the real selector:")
             print(driver.get_text("body"))
 

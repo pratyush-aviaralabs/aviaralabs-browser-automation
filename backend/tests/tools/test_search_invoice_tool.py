@@ -2,8 +2,8 @@ import pytest
 
 from dealercenter_agent.tools.base import StepFailure, ToolStatus
 from dealercenter_agent.tools.search_invoice_tool import (
-    INVENTORY_ROW_SELECTOR,
     SEARCH_BOX_SELECTOR,
+    SEARCH_RESULT_ROW_SELECTOR,
     SearchInvoiceTool,
 )
 
@@ -15,7 +15,7 @@ def test_search_finds_single_inventory_match_and_clicks_into_it(fake_driver_one_
     assert result.status == ToolStatus.SUCCESS
     assert result.data["match_type"] == "inventory"
     assert fake_driver_one_inventory_match.filled[SEARCH_BOX_SELECTOR] == "G16336"
-    assert INVENTORY_ROW_SELECTOR in fake_driver_one_inventory_match.clicks
+    assert SEARCH_RESULT_ROW_SELECTOR in fake_driver_one_inventory_match.clicks
 
 
 def test_search_waits_for_dropdown_before_reading_it(fake_driver_dropdown_renders_late):
@@ -29,13 +29,46 @@ def test_search_waits_for_dropdown_before_reading_it(fake_driver_dropdown_render
     assert result.data["match_type"] == "inventory"
 
 
-def test_search_falls_back_to_deal_block_when_no_inventory_row(fake_driver_only_deal_match):
+def test_search_finds_single_deal_match_and_clicks_through_to_edit_vehicle(fake_driver_only_deal_match):
+    """Confirmed live (2026-11-18): Inventory and Deal rows share one
+    CSS selector — classified by "Deal #:" in the text, not a second
+    selector. A single Deal match now clicks through: Deal row ->
+    "Deal Details" modal -> vehicle link -> "Edit Vehicle" modal."""
     result = SearchInvoiceTool().run(
         fake_driver_only_deal_match, vin="1FTFW1E81NFAG16336", stock_number=None
     )
+    assert result.status == ToolStatus.SUCCESS
     assert result.data["match_type"] == "deal"
-    # Deal match is reported, never clicked into (not built yet).
-    assert fake_driver_only_deal_match.clicks == []
+    assert SEARCH_RESULT_ROW_SELECTOR in fake_driver_only_deal_match.clicks
+
+
+def test_search_fails_when_deal_details_modal_never_opens(fake_driver_deal_details_never_opens):
+    with pytest.raises(StepFailure) as exc:
+        SearchInvoiceTool().run(
+            fake_driver_deal_details_never_opens, vin="1FTFW1E81NFAG16336", stock_number=None
+        )
+    assert "Deal Details modal did not open" in exc.value.reason
+
+
+def test_search_fails_when_edit_vehicle_modal_never_opens(fake_driver_edit_vehicle_never_opens):
+    with pytest.raises(StepFailure) as exc:
+        SearchInvoiceTool().run(
+            fake_driver_edit_vehicle_never_opens, vin="1FTFW1E81NFAG16336", stock_number=None
+        )
+    assert "Edit Vehicle modal did not open" in exc.value.reason
+
+
+def test_search_holds_without_clicking_when_both_inventory_and_deal_match(
+    fake_driver_both_inventory_and_deal_match,
+):
+    """Confirmed required live (2026-11-18): both an Inventory and a
+    Deal match for the same query must hold — report both, click into
+    neither — not silently prefer one."""
+    driver = fake_driver_both_inventory_and_deal_match
+    with pytest.raises(StepFailure) as exc:
+        SearchInvoiceTool().run(driver, vin="1FTFW1E81NFAG16336", stock_number=None)
+    assert "both an Inventory match and a Deal match" in exc.value.reason
+    assert driver.clicks == []
 
 
 def test_search_falls_back_to_stock_number_when_vin_tier_finds_nothing(
