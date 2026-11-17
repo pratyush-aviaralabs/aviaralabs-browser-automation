@@ -8,7 +8,13 @@ reason as every other manual_*.py script here.
 Flow: Login -> Search (inventory match only) -> CostAdd. No file upload.
 
 Usage:
-  venv/bin/python scripts/manual_cost_add_test.py <vin> <vendor_name> <invoice_number> <cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other>
+  venv/bin/python scripts/manual_cost_add_test.py <vin> <vendor_name> <invoice_number> <cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> [--skip-duplicate-check]
+
+--skip-duplicate-check forces the write path even when the memo already
+exists in the grid — deliberate, manual-testing-only bypass of
+CostAddTool's real duplicate-check (see cost_add_tool.py). Leaves a
+real extra row in the live account; delete it via its trash icon
+afterward.
 """
 import json
 import os
@@ -37,15 +43,25 @@ def terminal_mfa_code_provider() -> str:
 
 
 def main():
-    if len(sys.argv) != 7:
+    args = sys.argv[1:]
+    skip_duplicate_check = "--skip-duplicate-check" in args
+    args = [a for a in args if a != "--skip-duplicate-check"]
+
+    if len(args) != 6:
         print(
             "usage: manual_cost_add_test.py <vin> <vendor_name> <invoice_number> "
-            "<cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other>"
+            "<cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> [--skip-duplicate-check]"
         )
         return 2
-    vin, vendor_name, invoice_number, cost_str, date_str, category = sys.argv[1:7]
+    vin, vendor_name, invoice_number, cost_str, date_str, category = args
     cost = Decimal(cost_str)
     invoice_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+    if skip_duplicate_check:
+        print(
+            "[!] --skip-duplicate-check is on: this WILL add a real duplicate "
+            "entry to the live account if the invoice already exists there."
+        )
 
     saved_state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else None
 
@@ -77,6 +93,7 @@ def main():
                     invoice_date=invoice_date,
                     vendor_name=vendor_name,
                     memo=invoice_number,
+                    skip_duplicate_check=skip_duplicate_check,
                 )
                 print(f"[cost_add] {cost_add_result.status} data={cost_add_result.data}")
         except StepFailure as exc:

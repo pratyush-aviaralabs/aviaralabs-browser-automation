@@ -121,6 +121,24 @@ def test_cost_add_returns_exists_without_any_writes_when_memo_already_present(
     assert SAVE_BUTTON_SELECTOR not in driver.clicks
 
 
+def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_duplicate_memo):
+    from dealercenter_agent.tools.cost_add_tool import VENDOR_RESULT_ROW_SELECTOR
+
+    driver = fake_driver_cost_add_duplicate_memo
+    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["Jensen Tire & Auto"]
+    result = CostAddTool().run(
+        driver,
+        category="Repair",
+        cost=Decimal("270.00"),
+        invoice_date=date(2026, 11, 6),
+        vendor_name="Jensen",
+        memo="276289",
+        skip_duplicate_check=True,
+    )
+    assert result.status == ToolStatus.SUCCESS
+    assert SAVE_BUTTON_SELECTOR in driver.clicks
+
+
 def test_cost_add_duplicate_check_ignores_spaces(fake_driver_cost_add_duplicate_memo):
     # Fixture's existing memo is "276 289" (with a space); target "276289"
     # (no space) must still be recognized as the same invoice number.

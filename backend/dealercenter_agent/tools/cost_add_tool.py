@@ -83,6 +83,7 @@ class CostAddTool(Tool):
         invoice_date: date,
         vendor_name: str,
         memo: str,
+        skip_duplicate_check: bool = False,
         **kwargs,
     ) -> ToolResult:
         if category not in VALID_CATEGORIES:
@@ -94,10 +95,16 @@ class CostAddTool(Tool):
         if not driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=10000):
             raise StepFailure(self.name, "Cost Adds modal did not open")
 
-        existing_memos = driver.find_all_values(EXISTING_MEMO_SELECTOR)
-        target = _normalize_memo(memo)
-        if any(_normalize_memo(m) == target for m in existing_memos if m.strip()):
-            return ToolResult(status=ToolStatus.EXISTS, data={"memo": memo})
+        # skip_duplicate_check exists ONLY to let a human deliberately
+        # force the write path in manual testing (e.g. verifying the
+        # Add-entry flow against an invoice that's already present).
+        # Must stay False by default — every normal call, including the
+        # pipeline, goes through the real duplicate check.
+        if not skip_duplicate_check:
+            existing_memos = driver.find_all_values(EXISTING_MEMO_SELECTOR)
+            target = _normalize_memo(memo)
+            if any(_normalize_memo(m) == target for m in existing_memos if m.strip()):
+                return ToolResult(status=ToolStatus.EXISTS, data={"memo": memo})
 
         # Description has no formcontrolname of its own — every existing
         # row shows it mirroring Category, so setting Category alone is
