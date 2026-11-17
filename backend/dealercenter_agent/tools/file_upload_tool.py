@@ -1,3 +1,4 @@
+import time
 from pathlib import Path
 
 from ..automation.base import BrowserDriver
@@ -55,6 +56,28 @@ def all_file_names(driver: BrowserDriver, max_pages: int = MAX_GRID_PAGES) -> li
     return names
 
 
+# Module-level, not bound as default args, so tests can monkeypatch
+# these down (e.g. 50ms) for the "never appears" case instead of a real
+# unit test burning 20 real seconds on an expected-timeout path.
+UPLOAD_CONFIRM_TIMEOUT_MS = 20000
+UPLOAD_CONFIRM_POLL_MS = 1500
+
+
+def wait_for_file_across_pages(driver: BrowserDriver, stem: str) -> bool:
+    """Polls all_file_names() — not a single page — until stem shows up
+    or the timeout elapses. Two things a one-page, one-shot check both
+    miss: new uploads land at the END of the LAST page (this grid sorts
+    oldest-first, confirmed live), and the row can take a moment to
+    register after the upload call returns."""
+    deadline = time.monotonic() + UPLOAD_CONFIRM_TIMEOUT_MS / 1000
+    while True:
+        if any(stem in name for name in all_file_names(driver)):
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(UPLOAD_CONFIRM_POLL_MS / 1000)
+
+
 class FileUploadTool(Tool):
     """Uploads local_pdf_path into the Files tab of the vehicle detail
     page SearchInvoiceTool lands on, matching the existing
@@ -109,13 +132,13 @@ class FileUploadTool(Tool):
             driver.dismiss_blocking_modals()
             return ToolResult(status=ToolStatus.EXISTS, data={"uploaded_as": path.stem})
 
-        # Scoped to an actual grid row, not "this text anywhere on the
-        # page" — a generic text= check matched the filename quoted
-        # inside the duplicate-filename error dialog above and reported
-        # a false SUCCESS for an upload DealerCenter had just rejected.
-        if not driver.wait_visible(f"{EXISTING_FILE_NAME_SELECTOR}:has-text('{path.stem}')", timeout_ms=15000):
+        # Must check every page, not just whatever's currently rendered
+        # — new uploads land at the end of the LAST page (oldest-first
+        # sort, confirmed live), which a page-1-only check never sees.
+        if not wait_for_file_across_pages(driver, path.stem):
             raise StepFailure(
-                self.name, f"uploaded but {path.stem!r} never appeared in the Files grid"
+                self.name,
+                f"uploaded but {path.stem!r} never appeared in the Files grid (checked all pages)",
             )
 
         return ToolResult(status=ToolStatus.SUCCESS, data={"uploaded_as": path.stem, "category": "Others"})

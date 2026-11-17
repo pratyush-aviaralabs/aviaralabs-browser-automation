@@ -232,7 +232,18 @@ def fake_driver_no_matching_files() -> FakeBrowserDriver:
     # a bare lambda-True-for-everything would wrongly trigger that
     # branch too and turn every "normal success" test into EXISTS.
     driver.on_wait_visible = lambda sel, t: sel != DUPLICATE_FILENAME_ERROR_SELECTOR
-    driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Monson 00294"]
+    # The new upload "appears" only after upload_via_button has actually
+    # been called — models the real grid, where the row doesn't exist
+    # until the upload happens, so wait_for_file_across_pages' first
+    # poll (not a 20s real timeout) is what finds it in the success tests.
+    def on_find_all_text(selector: str) -> list[str]:
+        if selector != EXISTING_FILE_NAME_SELECTOR:
+            return []
+        if driver.uploaded_files:
+            return ["Monson 00294", "invoice"]
+        return ["Monson 00294"]
+
+    driver.on_find_all_text = on_find_all_text
     return driver
 
 
@@ -301,10 +312,17 @@ def fake_driver_duplicate_on_page_two() -> FakeBrowserDriver:
 
 
 @pytest.fixture
-def fake_driver_upload_never_appears() -> FakeBrowserDriver:
+def fake_driver_upload_never_appears(monkeypatch) -> FakeBrowserDriver:
     """Files tab loads fine (so the duplicate check can run), but the
     post-upload wait for the new filename never finds it — models a
-    silent upload failure (wrong trigger element, network hiccup, etc.)."""
+    silent upload failure (wrong trigger element, network hiccup, etc.).
+    Shrinks the real poll timeout so this expected-failure path doesn't
+    burn 20 real seconds in the test suite."""
+    import dealercenter_agent.tools.file_upload_tool as file_upload_tool_module
+
+    monkeypatch.setattr(file_upload_tool_module, "UPLOAD_CONFIRM_TIMEOUT_MS", 50)
+    monkeypatch.setattr(file_upload_tool_module, "UPLOAD_CONFIRM_POLL_MS", 10)
+
     driver = FakeBrowserDriver()
 
     def on_wait_visible(selector: str, _timeout_ms: int) -> bool:
