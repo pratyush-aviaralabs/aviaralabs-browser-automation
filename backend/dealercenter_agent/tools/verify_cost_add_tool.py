@@ -58,9 +58,18 @@ class VerifyCostAddTool(Tool):
         target = _normalize_memo(memo)
         memos: list[str] = []
         for attempt in range(MAX_VERIFY_ATTEMPTS):
-            driver.click(COST_ADDS_LINK_SELECTOR)
-            if not driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=10000):
-                raise StepFailure(self.name, "Cost Adds modal did not open")
+            # Confirmed live (2026-11-18): DealerCenter's own "Save"
+            # button (unlike "Save and Close") never closes the Cost
+            # Adds dialog — it just shows a toast and stays open. The
+            # FIRST attempt here can start with the dialog already
+            # open right after CostAddTool's own Save click, so check
+            # before assuming it needs opening: clicking the underlying
+            # page's Cost Adds link while the dialog is already open
+            # hangs 30s on its own backdrop.
+            if not driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=1500):
+                driver.click(COST_ADDS_LINK_SELECTOR)
+                if not driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=10000):
+                    raise StepFailure(self.name, "Cost Adds modal did not open")
 
             memos = driver.find_all_values(EXISTING_MEMO_SELECTOR)
             if any(_normalize_memo(m) == target for m in memos):
