@@ -242,3 +242,18 @@ def fake_driver_files_tab_never_loads() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.on_wait_visible = lambda sel, t: False
     return driver
+
+
+@pytest.fixture
+def fake_driver_upload_never_appears() -> FakeBrowserDriver:
+    """Files tab loads fine (so the duplicate check can run), but the
+    post-upload wait for the new filename never finds it — models a
+    silent upload failure (wrong trigger element, network hiccup, etc.)."""
+    driver = FakeBrowserDriver()
+
+    def on_wait_visible(selector: str, _timeout_ms: int) -> bool:
+        return selector == EXISTING_FILE_NAME_SELECTOR
+
+    driver.on_wait_visible = on_wait_visible
+    driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Monson 00294"]
+    return driver

@@ -188,7 +188,7 @@ def run_pipeline(
     *,
     vin: str | None,
     stock_number: str | None,
-    vendor_name: str,
+    vendor_name: str,  # unused for now — needed again once the rename-after-upload step exists
     invoice_number: str,
     local_pdf_path: str,
     emit: EventSink,
@@ -223,23 +223,22 @@ def run_pipeline(
                         reason="Deal-path click-through isn't built yet",
                     )
                 elif search_result is not None:
-                    file_name = f"{vendor_name.split()[0]} {invoice_number}"
                     upload_result = _run_step(
                         emit,
                         "FileUploadTool",
                         lambda: FileUploadTool().run(
                             driver,
                             local_pdf_path=local_pdf_path,
-                            file_name=file_name,
                             invoice_number=invoice_number,
                         ),
                     )
 
                     if upload_result is not None and upload_result.status == ToolStatus.SUCCESS:
+                        uploaded_as = upload_result.data["uploaded_as"]
                         _run_step(
                             emit,
                             "VerifyFileUploadTool",
-                            lambda: VerifyFileUploadTool().run(driver, file_name=file_name),
+                            lambda: VerifyFileUploadTool().run(driver, file_name=uploaded_as),
                         )
         except Exception as exc:
             # Belt-and-suspenders: _run_step already catches every

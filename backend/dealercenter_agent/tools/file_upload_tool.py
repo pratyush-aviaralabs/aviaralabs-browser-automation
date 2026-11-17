@@ -5,32 +5,34 @@ from .base import StepFailure, Tool, ToolResult, ToolStatus
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # DealerCenter's own stated upload limit
 
-# FILES_TAB_SELECTOR and EXISTING_FILE_NAME_SELECTOR confirmed against
-# the real DOM via the live Inspector (2026-11-17): the tab trigger is a
-# plain <span class="k-link">Files</span>, and each row's filename is
-# the text of an <a> inside <span class="file-name">, not a
-# [data-field='FileName'] grid cell as originally guessed.
+# All confirmed against the real DOM via the live Inspector (2026-11-17).
 FILES_TAB_SELECTOR = ".k-link:has-text('Files')"
 EXISTING_FILE_NAME_SELECTOR = ".file-name a"
-# Still unverified placeholders — the Inspector hasn't been clicked
-# through an actual upload yet (Browse, filename field, category,
-# top Save).
-FILE_INPUT_SELECTOR = "input[type='file']"
-FILE_NAME_INPUT_SELECTOR = "input[name='fileName']"
-CATEGORY_DROPDOWN_SELECTOR = "[data-field='Category']"
-# Exact text match, not :has-text() substring — "Save and Close" sits
-# right next to "Save" on this page and a substring match would risk
-# clicking the wrong one via .first.
-TOP_SAVE_BUTTON_SELECTOR = "button:text-is('Save')"
+# The dropzone has NO <input type="file"> sitting in the DOM at rest —
+# just this button, which opens the browser's native file-chooser
+# dialog (see BrowserDriver.upload_via_button). Confirmed live that
+# selecting a file here uploads it IMMEDIATELY under its own original
+# filename, with Category defaulting to "Others" — there is no
+# intermediate "set filename/category, then click Save" step, which is
+# what the first version of this tool incorrectly assumed.
+BROWSE_BUTTON_SELECTOR = "button:has-text('Browse')"
 
 
 class FileUploadTool(Tool):
     """Uploads local_pdf_path into the Files tab of the vehicle detail
     page SearchInvoiceTool lands on, matching the existing
-    dealercenter-cost-adds skill's exact rules: skip the upload entirely
-    if the invoice number is already in an existing File Name (no second
-    copy), 25MB limit enforced locally before any browser call, and the
-    page-level top Save — never "Save and Close", never "Create Bill"."""
+    dealercenter-cost-adds skill's duplicate-check rule: skip the upload
+    entirely if the invoice number is already in an existing File Name.
+    25MB limit enforced locally before any browser call.
+
+    Deliberately does NOT rename the uploaded file to the "vendor short
+    name + invoice number" convention the original skill specifies — it
+    uploads under the PDF's own original filename. Confirmed live that
+    DealerCenter's upload flow has no rename step built into it; each
+    row's pencil/edit icon is presumably how renaming actually happens,
+    but that interaction hasn't been inspected yet. This is a known,
+    flagged gap, not an oversight — a follow-up tool once that's
+    confirmed."""
 
     name = "FileUploadTool"
 
@@ -38,9 +40,7 @@ class FileUploadTool(Tool):
         self,
         driver: BrowserDriver,
         local_pdf_path: str,
-        file_name: str,
         invoice_number: str,
-        category: str = "Others",
         **kwargs,
     ) -> ToolResult:
         path = Path(local_pdf_path)
@@ -60,11 +60,13 @@ class FileUploadTool(Tool):
 
         existing_names = driver.find_all_text(EXISTING_FILE_NAME_SELECTOR)
         if any(invoice_number in name for name in existing_names if name.strip()):
-            return ToolResult(status=ToolStatus.EXISTS, data={"file_name": file_name})
+            return ToolResult(status=ToolStatus.EXISTS, data={"uploaded_as": path.stem})
 
-        driver.upload_file(FILE_INPUT_SELECTOR, str(path))
-        driver.fill(FILE_NAME_INPUT_SELECTOR, file_name)
-        driver.select_option(CATEGORY_DROPDOWN_SELECTOR, category)
-        driver.click(TOP_SAVE_BUTTON_SELECTOR)
+        driver.upload_via_button(BROWSE_BUTTON_SELECTOR, str(path))
 
-        return ToolResult(status=ToolStatus.SUCCESS, data={"file_name": file_name, "category": category})
+        if not driver.wait_visible(f"text={path.stem}", timeout_ms=15000):
+            raise StepFailure(
+                self.name, f"uploaded but {path.stem!r} never appeared in the Files grid"
+            )
+
+        return ToolResult(status=ToolStatus.SUCCESS, data={"uploaded_as": path.stem, "category": "Others"})

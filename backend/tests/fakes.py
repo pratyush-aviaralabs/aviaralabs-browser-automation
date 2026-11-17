@@ -63,8 +63,8 @@ class FakeBrowserDriver(BrowserDriver):
     def select_option(self, trigger_selector: str, option_text: str) -> None:
         self.select_calls.append((trigger_selector, option_text))
 
-    def upload_file(self, selector: str, file_path: str) -> None:
-        self.uploaded_files.append((selector, file_path))
+    def upload_via_button(self, trigger_selector: str, file_path: str) -> None:
+        self.uploaded_files.append((trigger_selector, file_path))
 
     def save_session(self) -> dict:
         return {"cookies": [], "origins": []}

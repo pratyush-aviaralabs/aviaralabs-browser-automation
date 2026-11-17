@@ -56,10 +56,10 @@ def test_select_option_opens_dropdown_and_clicks_matching_text(
     assert playwright_page.evaluate("window.__selected__") == "Repair"
 
 
-def test_upload_file_sets_the_input_value(playwright_page, file_input_fixture_url, tmp_path):
+def test_upload_via_button_triggers_file_chooser(playwright_page, file_input_fixture_url, tmp_path):
     pdf = tmp_path / "invoice.pdf"
     pdf.write_bytes(b"%PDF-1.4 fake")
     driver = PlaywrightDriver(playwright_page)
     driver.goto(file_input_fixture_url)
-    driver.upload_file("#f", str(pdf))
+    driver.upload_via_button("#browse", str(pdf))
     assert playwright_page.evaluate("window.__uploaded_name__") == "invoice.pdf"

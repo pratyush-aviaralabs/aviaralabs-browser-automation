@@ -98,8 +98,10 @@ class PlaywrightDriver(BrowserDriver):
         self.page.locator(trigger_selector).first.click()
         self.page.get_by_text(option_text, exact=True).first.click()
 
-    def upload_file(self, selector: str, file_path: str) -> None:
-        self.page.locator(selector).first.set_input_files(file_path)
+    def upload_via_button(self, trigger_selector: str, file_path: str) -> None:
+        with self.page.expect_file_chooser() as fc_info:
+            self.page.locator(trigger_selector).first.click()
+        fc_info.value.set_files(file_path)
 
     def get_text(self, selector: str) -> str:
         return self.page.locator(selector).first.inner_text()

@@ -46,9 +46,12 @@ class BrowserDriver(ABC):
         ...
 
     @abstractmethod
-    def upload_file(self, selector: str, file_path: str) -> None:
-        """Set a file input's value directly — never via Browse-dialog
-        clicks, which aren't automatable the same way across engines."""
+    def upload_via_button(self, trigger_selector: str, file_path: str) -> None:
+        """Click a button that opens the browser's native file-chooser
+        dialog and supply file_path to it. Confirmed live (2026-11-17)
+        that DealerCenter's upload dropzone has no plain
+        <input type="file"> sitting in the DOM at rest — clicking its
+        Browse button is what the real flow actually requires."""
         ...
 
     @abstractmethod

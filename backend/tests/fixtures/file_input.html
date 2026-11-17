@@ -1,8 +1,19 @@
 <!doctype html>
 <html>
 <body>
-  <input type="file" id="f">
+  <!--
+    Reproduces DealerCenter's real upload dropzone structure: a plain
+    button that opens the native file-chooser dialog, with NO
+    <input type="file"> sitting in the DOM at rest (confirmed live,
+    2026-11-17 — this fixture replaced an earlier one that incorrectly
+    assumed a plain file input was always present).
+  -->
+  <button id="browse">Browse</button>
+  <input type="file" id="f" style="display:none">
   <script>
+    document.getElementById('browse').addEventListener('click', () => {
+      document.getElementById('f').click();
+    });
     document.getElementById('f').addEventListener('change', () => {
       window.__uploaded_name__ = document.getElementById('f').files[0].name;
     });
