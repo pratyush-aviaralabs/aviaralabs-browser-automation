@@ -5,11 +5,16 @@ from .base import StepFailure, Tool, ToolResult, ToolStatus
 
 MAX_FILE_SIZE_BYTES = 25 * 1024 * 1024  # DealerCenter's own stated upload limit
 
-# Best-guess placeholders, unverified against the live Files tab's real
-# DOM (only seen in screenshots so far) — same situation every other
-# tool's selectors were in before being corrected against the real page.
-FILES_TAB_SELECTOR = "[role='tab']:has-text('Files')"
-EXISTING_FILE_NAME_SELECTOR = ".k-grid-table [data-field='FileName']"
+# FILES_TAB_SELECTOR and EXISTING_FILE_NAME_SELECTOR confirmed against
+# the real DOM via the live Inspector (2026-11-17): the tab trigger is a
+# plain <span class="k-link">Files</span>, and each row's filename is
+# the text of an <a> inside <span class="file-name">, not a
+# [data-field='FileName'] grid cell as originally guessed.
+FILES_TAB_SELECTOR = ".k-link:has-text('Files')"
+EXISTING_FILE_NAME_SELECTOR = ".file-name a"
+# Still unverified placeholders — the Inspector hasn't been clicked
+# through an actual upload yet (Browse, filename field, category,
+# top Save).
 FILE_INPUT_SELECTOR = "input[type='file']"
 FILE_NAME_INPUT_SELECTOR = "input[name='fileName']"
 CATEGORY_DROPDOWN_SELECTOR = "[data-field='Category']"
