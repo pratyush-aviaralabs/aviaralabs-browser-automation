@@ -40,6 +40,19 @@ def test_login_raises_step_failure_when_mfa_code_rejected(fake_driver_always_rej
     assert "rejected" in exc.value.reason
 
 
+def test_login_does_not_trust_a_pre_redirect_url_read(fake_driver_url_lags_behind_redirect):
+    # Must NOT short-circuit to a false SUCCESS off a stale current_url()
+    # read taken before waiting for anything — see the fixture's docstring.
+    with pytest.raises(StepFailure) as exc:
+        LoginTool().run(
+            fake_driver_url_lags_behind_redirect,
+            username="u",
+            password="p",
+            mfa_code_provider=lambda: "000000",
+        )
+    assert "username field not found" in exc.value.reason
+
+
 def test_login_raises_step_failure_on_malformed_mfa_code(fake_driver_requires_mfa):
     with pytest.raises(StepFailure) as exc:
         LoginTool().run(

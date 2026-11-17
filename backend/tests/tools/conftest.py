@@ -71,6 +71,36 @@ def fake_driver_always_rejects_mfa() -> FakeBrowserDriver:
 
 
 @pytest.fixture
+def fake_driver_url_lags_behind_redirect() -> FakeBrowserDriver:
+    """Reproduces the exact live bug: immediately after goto(), a client-
+    side redirect to the auth host hasn't happened YET, so current_url()
+    lies and still reports the pre-redirect app host — UNTIL something has
+    actually waited for the page to settle, at which point it tells the
+    truth. wait_visible() always reports "not found" (nothing ever
+    appears — this driver never actually gets logged in), but the act of
+    calling it is what the real wait_for(state="visible") poll spends
+    time on live, letting the redirect catch up.
+
+    A caller that reads current_url() before waiting for anything sees
+    the stale "not on auth host" read and wrongly reports success; a
+    caller that waits first (even for something that never appears) sees
+    the real, by-then-accurate auth-host URL."""
+    driver = FakeBrowserDriver()
+    state = {"waited": False}
+
+    def current_url() -> str:
+        return (BASE_URL + "/") if not state["waited"] else LOGIN_URL
+
+    def on_wait_visible(_sel: str, _timeout_ms: int) -> bool:
+        state["waited"] = True
+        return False  # nothing ever appears
+
+    driver.current_url = current_url  # type: ignore[method-assign]
+    driver.on_wait_visible = on_wait_visible
+    return driver
+
+
+@pytest.fixture
 def fake_driver_one_inventory_match() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["2022 FORD F150 ... Last 6 VIN: G16336"]

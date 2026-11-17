@@ -58,21 +58,27 @@ class LoginTool(Tool):
         driver.dismiss_blocking_modals()
         return ToolResult(status=ToolStatus.SUCCESS, data={"reused_session": False})
 
-    def _looks_logged_in(self, driver: BrowserDriver) -> bool:
-        if AUTH_HOST in driver.current_url():
-            return False
-        # Being off the auth host is the real proof login worked — the
-        # search-box wait is a bonus confirmation, never a hard gate that
-        # can override a real login into a false "failed" (see Review
-        # Focus in the Phase 1 plan: this exact bug cost a saved session
-        # once already in the POC).
-        driver.wait_visible(SEARCH_BOX_SELECTOR, timeout_ms=15000)
-        return True
+    def _looks_logged_in(self, driver: BrowserDriver, timeout_ms: int = 15000) -> bool:
+        # Wait for the real signal first. Reading current_url() on the
+        # same tick as a goto()/click (no wait in between) can observe the
+        # URL BEFORE a client-side redirect has actually happened — that
+        # raced here live: current_url() still read app.dealercenter.net
+        # for a moment after goto(), got read as "already off the auth
+        # host", and returned a false SUCCESS while the browser was still
+        # sitting on the login page. wait_visible() polls, so it can't
+        # race the redirect the same way a single current_url() read can.
+        if driver.wait_visible(SEARCH_BOX_SELECTOR, timeout_ms=timeout_ms):
+            return True
+        # No search box in time — only now, after having actually waited,
+        # is current_url() meaningful. Off the auth host with no search
+        # box is still treated as logged-in (a stale selector must not
+        # cost a real login — this part of the original fix still holds).
+        return AUTH_HOST not in driver.current_url()
 
-    def _looks_like_mfa(self, driver: BrowserDriver) -> bool:
-        if AUTH_HOST in driver.current_url():
-            return not driver.wait_visible(PASSWORD_SELECTOR, timeout_ms=500)
-        return driver.wait_visible(MFA_CODE_SELECTOR, timeout_ms=1000)
+    def _looks_like_mfa(self, driver: BrowserDriver, timeout_ms: int = 10000) -> bool:
+        # Same fix: wait for the MFA field to actually appear (or not)
+        # rather than reading current_url() immediately after a click.
+        return driver.wait_visible(MFA_CODE_SELECTOR, timeout_ms=timeout_ms)
 
     def _handle_mfa(self, driver: BrowserDriver, mfa_code_provider: Callable[[], str]) -> None:
         if not driver.wait_visible(MFA_CODE_SELECTOR, timeout_ms=10000):
