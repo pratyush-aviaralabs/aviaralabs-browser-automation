@@ -153,25 +153,45 @@
     }
 
     function resetForNewSession() {
+      // Close any previous session's socket first — leaving it open was
+      // the actual bug: two sessions' frames/logs interleaved into the
+      // same panels, which looked like a broken login but was really
+      // two concurrent browsers fighting over the same account.
+      if (ws) {
+        ws.onmessage = null;
+        ws.close();
+        ws = null;
+      }
       logPanel.innerHTML = '';
       mfaBox.classList.add('hidden');
       inspectorHint.classList.add('hidden');
       typeBox.classList.add('hidden');
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    async function startSession(url, options) {
       resetForNewSession();
-      const resp = await fetch('/run', { method: 'POST', body: new FormData(form) });
+      const resp = await fetch(url, options);
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        appendLog({
+          tool: 'Session',
+          status: 'failed',
+          reason: body.detail || `HTTP ${resp.status}`,
+          ts: Date.now() / 1000,
+        });
+        return;
+      }
       const { run_id } = await resp.json();
       wireSocket(run_id);
+    }
+
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      startSession('/run', { method: 'POST', body: new FormData(form) });
     });
 
-    openInspectorBtn.addEventListener('click', async () => {
-      resetForNewSession();
-      const resp = await fetch('/inspect/start', { method: 'POST' });
-      const { run_id } = await resp.json();
-      wireSocket(run_id);
+    openInspectorBtn.addEventListener('click', () => {
+      startSession('/inspect/start', { method: 'POST' });
     });
 
     // Maps a click on the (possibly CSS-scaled) screencast image back to

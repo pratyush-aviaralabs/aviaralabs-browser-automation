@@ -10,7 +10,7 @@ import threading
 import uuid
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from ..config import StorageConfig
@@ -34,6 +34,21 @@ class RunState:
 
 RUNS: dict[str, RunState] = {}
 _MAIN_LOOP: asyncio.AbstractEventLoop | None = None
+
+# Only one browser session (pipeline run or Inspector) is allowed to be
+# active at a time. Running two concurrently against the same account
+# was the actual cause of a real bug: both wrote to the same
+# .auth_state.json file at once, and the frontend's single screencast
+# image/log panel can't tell two sessions' frames/logs apart anyway —
+# they just interleaved, which is what looked like a broken login.
+_ACTIVE_RUN_ID: str | None = None
+
+
+def _active_session_running() -> bool:
+    if _ACTIVE_RUN_ID is None:
+        return False
+    state = RUNS.get(_ACTIVE_RUN_ID)
+    return state is not None and not state.stop_event.is_set()
 
 
 @app.on_event("startup")
@@ -73,7 +88,12 @@ async def start_run(
     invoice_number: str = Form(...),
     pdf: UploadFile = File(...),
 ):
+    global _ACTIVE_RUN_ID
+    if _active_session_running():
+        raise HTTPException(409, "A session is already active — close it before starting another.")
+
     run_id = uuid.uuid4().hex
+    _ACTIVE_RUN_ID = run_id
     storage = StorageConfig()
     storage.storage_local_path.mkdir(parents=True, exist_ok=True)
     pdf_path = storage.storage_local_path / f"{run_id}.pdf"
@@ -105,7 +125,12 @@ async def start_run(
 
 @app.post("/inspect/start")
 async def start_inspector():
+    global _ACTIVE_RUN_ID
+    if _active_session_running():
+        raise HTTPException(409, "A session is already active — close it before starting another.")
+
     run_id = uuid.uuid4().hex
+    _ACTIVE_RUN_ID = run_id
     state = RunState()
     RUNS[run_id] = state
 
