@@ -129,6 +129,27 @@ def _read_vendor_results_with_retry(
     return results
 
 
+def _find_exact_match(results: list[str], vendor_name: str) -> str | None:
+    """Case-insensitive exact match — the dialog does prefix/substring
+    matching (confirmed live 2026-11-18: searching "je" returned JENSEN
+    TIRE & AUTO, JET POWERTRAIN, and JERRY'S CHEVROLET), so multiple
+    results is normal and not itself ambiguous; only "no result matches
+    the full name exactly" is."""
+    target = vendor_name.strip().casefold()
+    for r in results:
+        if r.strip().casefold() == target:
+            return r
+    return None
+
+
+def _nth_xpath(selector: str, index: int) -> str:
+    """1-based index into an XPath locator's matches — avoids embedding
+    vendor-name text (which may contain quotes, e.g. "O'Reilly") into an
+    XPath string literal just to target one specific result row."""
+    assert selector.startswith("xpath=")
+    return f"xpath=({selector[len('xpath='):]})[{index + 1}]"
+
+
 def _is_blank_amount(raw: str) -> bool:
     """True for "", "$0.00", "0", "0.00", etc. — anything that isn't a
     real nonzero amount. Used by the blank-row guard; unparseable input
@@ -266,14 +287,26 @@ class CostAddTool(Tool):
         """Best-effort: Cost/Category/Memo are the required fields, Vendor
         is not — on any failure here, log a warning and leave the row's
         Vendor unset rather than aborting the whole entry. Still never
-        invents a vendor match; it only skips setting one.
+        invents a vendor match; it only picks whichever candidate is an
+        EXACT (case-insensitive) match for vendor_name.
+
+        Search strategy confirmed live (2026-11-18): the dialog does
+        prefix/substring matching, not a full-string lookup, so
+        searching the full vendor_name can return zero hits even when
+        the vendor exists. Try the full name first; if that comes back
+        empty, retry with just the first word (same as before), then
+        pick the exact match out of whichever candidate set came back —
+        multiple candidates is normal here, not itself a reason to skip.
 
         Every early-return path below MUST leave the Cost Adds dialog in
         a clickable state — confirmed live (2026-11-18) that abandoning
         the "Search or Add Vendor" popup without closing it leaves a
         k-overlay backdrop that blocks every subsequent click (including
-        Save) for the rest of the run."""
-        query = vendor_name.split()[0] if vendor_name else ""
+        Save) for the rest of the run. Also confirmed live: a click on
+        the result row can silently fail to register as a selection —
+        verify the dialog actually closed before trusting it worked."""
+        if not vendor_name:
+            return "no vendor name given — Vendor left unset"
 
         try:
             driver.click(NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR)
@@ -281,24 +314,35 @@ class CostAddTool(Tool):
                 self._close_vendor_dialog(driver)
                 return "vendor search box did not open — Vendor left unset"
 
-            before_count = len(driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR))
-            driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
-            results = _read_vendor_results_with_retry(driver, before_count)
-            if not results:
-                self._close_vendor_dialog(driver)
-                return f"no vendor match for {vendor_name!r} — Vendor left unset"
-            if len(results) > 1:
+            results = self._search_vendor_candidates(driver, vendor_name)
+            match = _find_exact_match(results, vendor_name)
+            if not match and vendor_name.split()[0] != vendor_name:
+                results = self._search_vendor_candidates(driver, vendor_name.split()[0])
+                match = _find_exact_match(results, vendor_name)
+
+            if not match:
                 self._close_vendor_dialog(driver)
                 return (
-                    f"ambiguous vendor match: {len(results)} results for "
-                    f"{vendor_name!r} — Vendor left unset"
+                    f"no result matched {vendor_name!r} exactly among "
+                    f"{len(results)} candidates — Vendor left unset (never guessing a close name)"
                 )
 
-            driver.click(VENDOR_RESULT_ROW_SELECTOR)
+            driver.click(_nth_xpath(VENDOR_RESULT_ROW_SELECTOR, results.index(match)))
+            if driver.wait_visible(VENDOR_SEARCH_INPUT_SELECTOR, timeout_ms=2000):
+                # Dialog is still open — the click didn't register as a
+                # real selection. Confirmed live (2026-11-18): this can
+                # happen silently with no exception at all.
+                self._close_vendor_dialog(driver)
+                return f"selecting {match!r} did not close the vendor dialog — Vendor left unset"
             return None
         except Exception as exc:
             self._close_vendor_dialog(driver)
             return f"vendor selection failed ({exc}) — Vendor left unset"
+
+    def _search_vendor_candidates(self, driver: BrowserDriver, query: str) -> list[str]:
+        before_count = len(driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR))
+        driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
+        return _read_vendor_results_with_retry(driver, before_count)
 
     def _close_vendor_dialog(self, driver: BrowserDriver) -> None:
         """Deliberately NOT driver.dismiss_blocking_modals() — that picks

@@ -23,11 +23,12 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
         category="Repair",
         cost=Decimal("270.00"),
         invoice_date=date(2026, 11, 6),
-        vendor_name="Jensen Automotive",
+        vendor_name="Jensen Tire & Auto",
         memo="276289",
     )
     assert result.status == ToolStatus.SUCCESS
     assert result.data["category"] == "Repair"
+    assert "warnings" not in result.data  # exact match found — no warning expected
     assert COST_ADDS_LINK_SELECTOR in driver.clicks
     assert (NEW_ROW_CATEGORY_SELECTOR, "Repair") in driver.select_calls
     assert driver.filled[NEW_ROW_COST_SELECTOR] == "270.00"
@@ -42,15 +43,21 @@ def test_cost_add_fills_other_row(fake_driver_cost_add_vendor_found):
         category="Other",
         cost=Decimal("50.00"),
         invoice_date=date(2026, 1, 1),
-        vendor_name="Jensen Automotive",
+        vendor_name="Jensen Tire & Auto",
         memo="X",
     )
     assert result.data["category"] == "Other"
 
 
-def test_cost_add_searches_vendor_by_first_word(fake_driver_cost_add_vendor_found):
-    driver = fake_driver_cost_add_vendor_found
-    CostAddTool().run(
+def test_cost_add_falls_back_to_first_word_when_full_name_search_finds_nothing(
+    fake_driver_cost_add_vendor_fallback_to_first_word,
+):
+    # Confirmed live (2026-11-18): the dialog does prefix matching, so a
+    # multi-word vendor_name searched in full can return zero hits even
+    # though the vendor exists — must retry with just the first word
+    # and then pick the exact match out of THOSE candidates.
+    driver = fake_driver_cost_add_vendor_fallback_to_first_word
+    result = CostAddTool().run(
         driver,
         category="Repair",
         cost=Decimal("10"),
@@ -60,6 +67,8 @@ def test_cost_add_searches_vendor_by_first_word(fake_driver_cost_add_vendor_foun
     )
     from dealercenter_agent.tools.cost_add_tool import VENDOR_SEARCH_INPUT_SELECTOR
 
+    assert result.status == ToolStatus.SUCCESS
+    assert "warnings" not in result.data
     assert driver.filled[VENDOR_SEARCH_INPUT_SELECTOR] == "Jensen"
 
 
@@ -90,12 +99,15 @@ def test_cost_add_skips_vendor_without_inventing_one_on_no_match(fake_driver_cos
         memo="X",
     )
     assert result.status == ToolStatus.SUCCESS
-    assert "no vendor match" in result.data["warnings"][0]
+    assert "no result matched" in result.data["warnings"][0]
     assert driver.filled[NEW_ROW_MEMO_SELECTOR] == "X"
     assert SAVE_BUTTON_SELECTOR in driver.clicks
 
 
-def test_cost_add_skips_vendor_on_ambiguous_match(fake_driver_cost_add_ambiguous_vendor):
+def test_cost_add_skips_vendor_when_no_candidate_is_an_exact_match(fake_driver_cost_add_ambiguous_vendor):
+    # Multiple candidates come back ("Jensen Tire", "Jensen Auto Body")
+    # but NEITHER is an exact match for "Jensen" — must report that, not
+    # silently guess one of them.
     driver = fake_driver_cost_add_ambiguous_vendor
     result = CostAddTool().run(
         driver,
@@ -106,7 +118,8 @@ def test_cost_add_skips_vendor_on_ambiguous_match(fake_driver_cost_add_ambiguous
         memo="X",
     )
     assert result.status == ToolStatus.SUCCESS
-    assert "ambiguous vendor" in result.data["warnings"][0]
+    assert "no result matched" in result.data["warnings"][0]
+    assert "2 candidates" in result.data["warnings"][0]
     assert SAVE_BUTTON_SELECTOR in driver.clicks
 
 

@@ -13,7 +13,11 @@ from dealercenter_agent.tools.search_invoice_tool import (
     INVENTORY_ROW_SELECTOR,
     SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
-from dealercenter_agent.tools.cost_add_tool import EXISTING_MEMO_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
+from dealercenter_agent.tools.cost_add_tool import (
+    EXISTING_MEMO_SELECTOR,
+    VENDOR_RESULT_ROW_SELECTOR,
+    VENDOR_SEARCH_INPUT_SELECTOR,
+)
 from dealercenter_agent.tools.file_upload_tool import (
     DUPLICATE_FILENAME_ERROR_SELECTOR,
     EXISTING_FILE_NAME_SELECTOR,
@@ -184,23 +188,47 @@ def fake_driver_two_inventory_matches() -> FakeBrowserDriver:
     return driver
 
 
-def _vendor_dialog_driver(filtered_results: list[str]) -> FakeBrowserDriver:
-    """Models the real dialog: the FIRST read (before typing a query)
-    sees the unfiltered ~98-vendor baseline; every read after that sees
-    the already-filtered result — same shape as the real async-filter
-    race _read_vendor_results_with_retry exists to survive, without
-    wasting real retry/sleep time in the test."""
+def _vendor_dialog_driver(results_by_query) -> FakeBrowserDriver:
+    """Models the real dialog end to end:
+    - The FIRST read (before typing anything) sees the unfiltered
+      ~98-vendor baseline; every read after that is query-dependent —
+      same shape as the real async-filter race
+      _read_vendor_results_with_retry exists to survive, without
+      wasting real retry/sleep time in the test.
+    - Clicking a result row (selector containing "mb-2", the result
+      row's own class) "closes" the dialog — wait_visible on the search
+      input then correctly reports False, letting tests exercise the
+      close-verification check instead of always seeing True.
+
+    results_by_query: a static list[str] (same regardless of query) or
+    a callable(query: str) -> list[str] for query-dependent scenarios
+    (e.g. testing the full-name-fails/first-word-fallback path)."""
     driver = FakeBrowserDriver()
-    driver.on_wait_visible = lambda sel, t: True
-    state = {"calls": 0}
+    state = {"calls": 0, "selected": False}
+
+    def resolve(query: str) -> list[str]:
+        return results_by_query(query) if callable(results_by_query) else results_by_query
 
     def on_find_all_text(selector: str) -> list[str]:
         if selector != VENDOR_RESULT_ROW_SELECTOR:
             return []
         state["calls"] += 1
-        return [f"UNFILTERED VENDOR {i}" for i in range(98)] if state["calls"] == 1 else filtered_results
+        if state["calls"] == 1:
+            return [f"UNFILTERED VENDOR {i}" for i in range(98)]
+        return resolve(driver.filled.get(VENDOR_SEARCH_INPUT_SELECTOR, ""))
+
+    def on_click(selector: str) -> None:
+        if "mb-2" in selector:
+            state["selected"] = True
+
+    def on_wait_visible(selector: str, _timeout_ms: int) -> bool:
+        if selector == VENDOR_SEARCH_INPUT_SELECTOR:
+            return not state["selected"]
+        return True
 
     driver.on_find_all_text = on_find_all_text
+    driver.on_click = on_click
+    driver.on_wait_visible = on_wait_visible
     return driver
 
 
@@ -227,7 +255,25 @@ def fake_driver_cost_add_no_vendor_match() -> FakeBrowserDriver:
 
 @pytest.fixture
 def fake_driver_cost_add_ambiguous_vendor() -> FakeBrowserDriver:
+    # Neither candidate is an exact match for "Jensen" — must report "no
+    # exact match", not silently guess one.
     return _vendor_dialog_driver(["Jensen Tire", "Jensen Auto Body"])
+
+
+@pytest.fixture
+def fake_driver_cost_add_vendor_fallback_to_first_word() -> FakeBrowserDriver:
+    """Confirmed live (2026-11-18): the dialog does prefix matching, not
+    full-string — a multi-word vendor_name searched in full can return
+    zero hits even though the vendor exists under a shorter name match.
+    Here the full-name query finds nothing; the first-word fallback
+    query returns candidates including the exact full-name match."""
+
+    def results_by_query(query: str) -> list[str]:
+        if query == "Jensen Automotive Group":
+            return []
+        return ["Jensen Automotive Group", "Jensen Tire & Auto"]
+
+    return _vendor_dialog_driver(results_by_query)
 
 
 @pytest.fixture
