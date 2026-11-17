@@ -43,8 +43,8 @@
         Open Inspector
       </button>
       <span class="text-xs text-gray-500">
-        Live, click-to-interact session — click anything in the right panel to actually click it there
-        AND see its real HTML on the left. Separate from a pipeline Run.
+        Live, click-to-interact session with no automated steps. A pipeline Run also becomes
+        click-to-interact once it finishes — on whatever page it stopped on, success or failure.
       </span>
     </div>
 
@@ -87,7 +87,6 @@
     const typeBox = document.getElementById('type-box');
     const typeInput = document.getElementById('type-input');
     let ws = null;
-    let inspectorMode = false;
 
     const STATUS_COLOR = {
       success: 'text-green-700 bg-green-50',
@@ -142,6 +141,9 @@
           mfaInput.focus();
         } else if (msg.type === 'done') {
           mfaBox.classList.add('hidden');
+        } else if (msg.type === 'interactive_ready') {
+          inspectorHint.classList.remove('hidden');
+          typeBox.classList.remove('hidden');
         } else if (msg.type === 'inspect') {
           appendInspectResult(msg.outer_html);
         } else if (msg.type === 'inspect_error') {
@@ -150,26 +152,23 @@
       };
     }
 
-    form.addEventListener('submit', async (e) => {
-      e.preventDefault();
+    function resetForNewSession() {
       logPanel.innerHTML = '';
       mfaBox.classList.add('hidden');
-      inspectorMode = false;
       inspectorHint.classList.add('hidden');
       typeBox.classList.add('hidden');
+    }
 
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      resetForNewSession();
       const resp = await fetch('/run', { method: 'POST', body: new FormData(form) });
       const { run_id } = await resp.json();
       wireSocket(run_id);
     });
 
     openInspectorBtn.addEventListener('click', async () => {
-      logPanel.innerHTML = '';
-      mfaBox.classList.add('hidden');
-      inspectorMode = true;
-      inspectorHint.classList.remove('hidden');
-      typeBox.classList.remove('hidden');
-
+      resetForNewSession();
       const resp = await fetch('/inspect/start', { method: 'POST' });
       const { run_id } = await resp.json();
       wireSocket(run_id);
@@ -178,9 +177,11 @@
     // Maps a click on the (possibly CSS-scaled) screencast image back to
     // real page coordinates — this only lines up because the Playwright
     // viewport is fixed to the same 1280x800 the screencast is encoded
-    // at (see automation/playwright_driver.py).
+    // at (see automation/playwright_driver.py). Works any time a session
+    // is connected — both a Run and an Inspector session end up in the
+    // same interactive loop server-side.
     screencast.addEventListener('click', (e) => {
-      if (!inspectorMode || !ws) return;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
       const rect = screencast.getBoundingClientRect();
       const scaleX = (screencast.naturalWidth || 1280) / rect.width;
       const scaleY = (screencast.naturalHeight || 800) / rect.height;

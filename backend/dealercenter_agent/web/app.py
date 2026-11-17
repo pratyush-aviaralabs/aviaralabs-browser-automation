@@ -25,10 +25,11 @@ class RunState:
     def __init__(self):
         self.clients: list[WebSocket] = []
         self.mfa_waiter: MfaWaiter | None = None
-        # Only set for Inspector sessions — a pipeline run's WS handler
-        # ignores click/type messages because these stay None for it.
-        self.commands: "queue.Queue[dict] | None" = None
-        self.stop_event: threading.Event | None = None
+        # Present for every session now, pipeline or Inspector — every
+        # run ends by staying open for live click-to-interact/inspect on
+        # whatever page it stopped on (see runner.py's _interactive_loop).
+        self.commands: "queue.Queue[dict]" = queue.Queue()
+        self.stop_event: threading.Event = threading.Event()
 
 
 RUNS: dict[str, RunState] = {}
@@ -93,6 +94,8 @@ async def start_run(
             local_pdf_path=str(pdf_path),
             emit=lambda payload: _broadcast(run_id, payload),
             mfa_waiter=mfa_waiter,
+            commands=state.commands,
+            stop_event=state.stop_event,
         ),
         daemon=True,
     )
@@ -104,8 +107,6 @@ async def start_run(
 async def start_inspector():
     run_id = uuid.uuid4().hex
     state = RunState()
-    state.commands = queue.Queue()
-    state.stop_event = threading.Event()
     RUNS[run_id] = state
 
     thread = threading.Thread(
@@ -130,11 +131,13 @@ async def ws_endpoint(websocket: WebSocket, run_id: str):
             msg = await websocket.receive_json()
             if msg.get("type") == "mfa_code" and state.mfa_waiter:
                 state.mfa_waiter.submit_code(msg.get("code", ""))
-            elif msg.get("type") in ("click", "type") and state.commands is not None:
+            elif msg.get("type") in ("click", "type"):
                 state.commands.put(msg)
     except WebSocketDisconnect:
         state.clients.remove(websocket)
-        if state.stop_event is not None and not state.clients:
-            # Inspector session's only viewer left — stop driving a
-            # browser nobody can see or click anymore.
+        if not state.clients:
+            # Last viewer left — stop driving a browser nobody can see
+            # or click anymore (works for both a pipeline run and an
+            # Inspector session, since both now end in the same
+            # interactive loop).
             state.stop_event.set()
