@@ -74,8 +74,18 @@ NEW_ROW_VENDOR_LINK_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-co
 # The "Search or Add Vendor" dialog this button opens, and its result
 # row, are still UNVERIFIED — not reached yet, needs its own live
 # console check before this path is trusted.
-VENDOR_SEARCH_INPUT_SELECTOR = "[role='dialog'] input[placeholder*='Search' i]"
-VENDOR_RESULT_ROW_SELECTOR = "[role='dialog'] .vendor-search-result-row"
+#
+# [role='dialog'] alone is ambiguous — confirmed live (2026-11-18): the
+# Cost Adds dialog itself ALSO has role="dialog", and .first on a
+# page-wide [role='dialog'] locator matched the outer Cost Adds dialog,
+# not the nested vendor popup (whose search input then never got
+# filled). Nested/popup dialogs are appended after their parent in
+# document order, so the LAST [role='dialog'] on the page is the
+# topmost one — scope every vendor-dialog selector off that instead.
+VENDOR_DIALOG_XPATH = "xpath=(//div[@role='dialog'])[last()]"
+VENDOR_SEARCH_INPUT_SELECTOR = VENDOR_DIALOG_XPATH + "//input[@type='text']"
+VENDOR_RESULT_ROW_SELECTOR = VENDOR_DIALOG_XPATH + "//*[contains(@class,'vendor-search-result-row')]"
+VENDOR_DIALOG_CLOSE_SELECTOR = VENDOR_DIALOG_XPATH + "//button[@title='Close']"
 NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
@@ -227,19 +237,28 @@ class CostAddTool(Tool):
         """Best-effort: Cost/Category/Memo are the required fields, Vendor
         is not — on any failure here, log a warning and leave the row's
         Vendor unset rather than aborting the whole entry. Still never
-        invents a vendor match; it only skips setting one."""
+        invents a vendor match; it only skips setting one.
+
+        Every early-return path below MUST leave the Cost Adds dialog in
+        a clickable state — confirmed live (2026-11-18) that abandoning
+        the "Search or Add Vendor" popup without closing it leaves a
+        k-overlay backdrop that blocks every subsequent click (including
+        Save) for the rest of the run."""
         query = vendor_name.split()[0] if vendor_name else ""
 
         try:
             driver.click(NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR)
             if not driver.wait_visible(VENDOR_SEARCH_INPUT_SELECTOR, timeout_ms=5000):
+                self._close_vendor_dialog(driver)
                 return "vendor search box did not open — Vendor left unset"
             driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
 
             results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
             if not results:
+                self._close_vendor_dialog(driver)
                 return f"no vendor match for {vendor_name!r} — Vendor left unset"
             if len(results) > 1:
+                self._close_vendor_dialog(driver)
                 return (
                     f"ambiguous vendor match: {len(results)} results for "
                     f"{vendor_name!r} — Vendor left unset"
@@ -248,4 +267,18 @@ class CostAddTool(Tool):
             driver.click(VENDOR_RESULT_ROW_SELECTOR)
             return None
         except Exception as exc:
+            self._close_vendor_dialog(driver)
             return f"vendor selection failed ({exc}) — Vendor left unset"
+
+    def _close_vendor_dialog(self, driver: BrowserDriver) -> None:
+        """Deliberately NOT driver.dismiss_blocking_modals() — that picks
+        the FIRST [role='dialog'] on the page, which is the outer Cost
+        Adds dialog (it also has role="dialog"), and would close the
+        whole thing instead of just this nested popup. Target the LAST
+        (innermost/topmost) dialog's own Close button instead. Best
+        effort — swallow failures here, we're already on a failure path
+        and must not let a close-button miss mask the real warning."""
+        try:
+            driver.click(VENDOR_DIALOG_CLOSE_SELECTOR)
+        except Exception:
+            pass
