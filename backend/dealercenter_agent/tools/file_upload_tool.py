@@ -61,6 +61,15 @@ def all_file_names(driver: BrowserDriver, max_pages: int = MAX_GRID_PAGES) -> li
 # unit test burning 20 real seconds on an expected-timeout path.
 UPLOAD_CONFIRM_TIMEOUT_MS = 20000
 UPLOAD_CONFIRM_POLL_MS = 1500
+# Confirmed live (2026-11-18): re-uploading the exact same PDF a second
+# time has no invoice-number-based duplicate signal to catch it (its
+# filename doesn't contain the invoice number at all) — the ONLY thing
+# that should catch it is this dialog, and 3s was too short, same
+# "async dialogs need more than a couple seconds" lesson hit elsewhere
+# in this codebase. Missing it meant falling through to
+# wait_for_file_across_pages(), which correctly reported failure since
+# nothing NEW had actually been added.
+DUPLICATE_ERROR_WAIT_MS = 8000
 
 
 def wait_for_file_across_pages(driver: BrowserDriver, stem: str) -> bool:
@@ -128,7 +137,7 @@ class FileUploadTool(Tool):
         # real duplicate signal too, just a different one than our own
         # invoice-number check above — treat it the same way: EXISTS,
         # not a failure, after clearing the dialog it leaves behind.
-        if driver.wait_visible(DUPLICATE_FILENAME_ERROR_SELECTOR, timeout_ms=3000):
+        if driver.wait_visible(DUPLICATE_FILENAME_ERROR_SELECTOR, timeout_ms=DUPLICATE_ERROR_WAIT_MS):
             driver.dismiss_blocking_modals()
             return ToolResult(status=ToolStatus.EXISTS, data={"uploaded_as": path.stem})
 
