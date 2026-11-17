@@ -71,9 +71,8 @@ NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'ve
 # row, which shows the "Search Vendor" placeholder with no <a>. Used by
 # the blank-row guard, not by the fill/select flow itself.
 NEW_ROW_VENDOR_LINK_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-col')]//a"
-# The "Search or Add Vendor" dialog this button opens, and its result
-# row, are still UNVERIFIED — not reached yet, needs its own live
-# console check before this path is trusted.
+# The "Search or Add Vendor" dialog this button opens — confirmed live
+# (2026-11-18), see selectors below.
 #
 # [role='dialog'] alone is ambiguous — confirmed live (2026-11-18): the
 # Cost Adds dialog itself ALSO has role="dialog", and .first on a
@@ -83,8 +82,16 @@ NEW_ROW_VENDOR_LINK_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-co
 # document order, so the LAST [role='dialog'] on the page is the
 # topmost one — scope every vendor-dialog selector off that instead.
 VENDOR_DIALOG_XPATH = "xpath=(//div[@role='dialog'])[last()]"
-VENDOR_SEARCH_INPUT_SELECTOR = VENDOR_DIALOG_XPATH + "//input[@type='text']"
-VENDOR_RESULT_ROW_SELECTOR = VENDOR_DIALOG_XPATH + "//*[contains(@class,'vendor-search-result-row')]"
+# Confirmed live (2026-11-18): the input has NO type attribute at all
+# (not type='text') — it's a bare <input class="k-input-inner"> inside
+# a <kendo-textbox>, same input-inner pattern as every other Kendo
+# control in this app.
+VENDOR_SEARCH_INPUT_SELECTOR = VENDOR_DIALOG_XPATH + "//input[contains(@class,'k-input-inner')]"
+# Confirmed live (2026-11-18): each result is a bare <b>VENDOR NAME</b>
+# inside <div class="row mb-2"> — no dedicated result-row class exists.
+# The div is the clickable unit; find_all_text on it reads the <b>'s
+# text (its only content).
+VENDOR_RESULT_ROW_SELECTOR = VENDOR_DIALOG_XPATH + "//div[contains(@class,'row') and contains(@class,'mb-2')]"
 VENDOR_DIALOG_CLOSE_SELECTOR = VENDOR_DIALOG_XPATH + "//button[@title='Close']"
 NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
