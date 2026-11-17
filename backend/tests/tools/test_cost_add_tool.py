@@ -34,7 +34,7 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
     assert COST_ADDS_LINK_SELECTOR in driver.clicks
     assert (NEW_ROW_CATEGORY_SELECTOR, "Repair") in driver.select_calls
     assert driver.filled[NEW_ROW_COST_SELECTOR] == "270.00"
-    assert driver.typed[NEW_ROW_DATE_SELECTOR] == "11/06/2026"
+    assert driver.typed[NEW_ROW_DATE_SELECTOR] == "11062026"
     assert driver.typed[NEW_ROW_MEMO_SELECTOR] == "276289"
     assert COST_ADDS_SAVE_BUTTON_SELECTOR in driver.clicks
     assert COST_ADDS_CLOSE_SELECTOR in driver.clicks

@@ -342,7 +342,14 @@ class CostAddTool(Tool):
         # type_text, not fill — confirmed live (2026-11-18) that fill()
         # corrupted this masked Kendo date input ("11/18/0006" instead of
         # "11/18/2026"), since direct value assignment bypasses its mask.
-        driver.type_text(NEW_ROW_DATE_SELECTOR, invoice_date.strftime("%m/%d/%Y"))
+        #
+        # Digits only, no "/" separators — confirmed live (2026-11-18):
+        # typing the literal slashes produced "10/18/2026" instead of
+        # "10/22/2026" (MM and YYYY correct, DD silently stuck at
+        # today's default). The mask auto-advances MM->DD->YYYY purely
+        # by digit count (2/2/4); typing "/" partway through evidently
+        # confuses that advance instead of being a no-op.
+        driver.type_text(NEW_ROW_DATE_SELECTOR, invoice_date.strftime("%m%d%Y"))
 
         vendor_warning = self._select_vendor(driver, vendor_name)
 
