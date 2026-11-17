@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head><title>modal fixture</title></head>
+<body>
+  <!--
+    Reproduces the async-render race hit live on the dashboard: the
+    "Trust this browser?" modal (and its Kendo .k-overlay backdrop) does
+    NOT exist in the DOM at page load — it's injected after a delay, the
+    same way the real Angular/Kendo app renders it only once its own data
+    calls resolve. A naive `is_visible()` check (single-shot, no polling)
+    run immediately after navigation sees nothing and wrongly concludes
+    "no modal" a split second before it appears.
+  -->
+  <div id="app">
+    <input placeholder="Search Inventory, Customer, Deal ...">
+  </div>
+  <script>
+    setTimeout(() => {
+      const overlay = document.createElement('div');
+      overlay.className = 'k-overlay';
+      document.body.appendChild(overlay);
+
+      const dialog = document.createElement('div');
+      dialog.className = 'k-dialog';
+      dialog.setAttribute('role', 'dialog');
+      dialog.innerHTML = `
+        <h2>Trust this browser?</h2>
+        <button onclick="this.closest('.k-dialog').remove(); document.querySelector('.k-overlay').remove();">No</button>
+        <button onclick="this.closest('.k-dialog').remove(); document.querySelector('.k-overlay').remove(); window.__trusted__ = true;">Yes, trust this browser</button>
+      `;
+      document.body.appendChild(dialog);
+    }, 1500);
+  </script>
+</body>
+</html>

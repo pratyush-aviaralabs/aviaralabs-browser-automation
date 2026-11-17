@@ -1,0 +1,41 @@
+from dealercenter_agent.automation.playwright_driver import PlaywrightDriver
+
+
+def test_click_submit_near_skips_aria_hidden_button(playwright_page, login_form_fixture_url):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(login_form_fixture_url)
+    driver.fill("#username", "x")
+    driver.fill("#password", "y")
+    driver.click_submit_near("#password")
+    assert playwright_page.evaluate("window.__submitted_button_aria_hidden__") == "false"
+
+
+def test_wait_visible_polls_for_async_modal(playwright_page, modal_chain_fixture_url):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(modal_chain_fixture_url)
+    # Modal is injected ~1.5s after load; a non-polling check would miss it.
+    assert driver.wait_visible("button:has-text('trust this browser')", timeout_ms=3000) is True
+
+
+def test_wait_visible_returns_false_when_nothing_appears(playwright_page, modal_chain_fixture_url):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(modal_chain_fixture_url)
+    assert driver.wait_visible("button:has-text('this never appears')", timeout_ms=500) is False
+
+
+def test_dismiss_blocking_modals_accepts_trust_browser_and_clears_overlay(
+    playwright_page, modal_chain_fixture_url
+):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(modal_chain_fixture_url)
+    driver.dismiss_blocking_modals()
+    assert playwright_page.evaluate("window.__trusted__") is True
+    assert driver.wait_visible(".k-overlay", timeout_ms=500) is False
+
+
+def test_save_session_returns_storage_state_dict(playwright_page, login_form_fixture_url):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(login_form_fixture_url)
+    state = driver.save_session()
+    assert "cookies" in state
+    assert "origins" in state

@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><title>login fixture</title></head>
+<body>
+  <!--
+    Reproduces the exact structure captured live from auth.dealercenter.net:
+    ONE form containing TWO button[type=submit] elements — a decorative
+    aria-hidden one before the fields, and the real one after. A naive
+    `button[type=submit]:has-text('Continue')` with `.first` grabs the
+    wrong one, which fails with "intercepts pointer events" because it
+    sits behind the visible form.
+  -->
+  <form id="login-form" onsubmit="return false;">
+    <button type="submit" tabindex="-1" aria-hidden="true"
+            onclick="window.__submitted_button_aria_hidden__ = 'true'">Continue</button>
+
+    <label for="username">Username</label>
+    <input id="username" name="username" type="text">
+
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password">
+
+    <button type="submit"
+            onclick="window.__submitted_button_aria_hidden__ = 'false'">Continue</button>
+  </form>
+  <script>window.__submitted_button_aria_hidden__ = 'unset';</script>
+</body>
+</html>
