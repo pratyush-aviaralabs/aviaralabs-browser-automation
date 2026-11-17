@@ -103,6 +103,40 @@ def test_cost_add_fails_on_ambiguous_vendor(fake_driver_cost_add_ambiguous_vendo
     assert "ambiguous vendor" in exc.value.reason
 
 
+def test_cost_add_returns_exists_without_any_writes_when_memo_already_present(
+    fake_driver_cost_add_duplicate_memo,
+):
+    driver = fake_driver_cost_add_duplicate_memo
+    result = CostAddTool().run(
+        driver,
+        category="Repair",
+        cost=Decimal("270.00"),
+        invoice_date=date(2026, 11, 6),
+        vendor_name="Jensen Automotive",
+        memo="276289",
+    )
+    assert result.status == ToolStatus.EXISTS
+    assert result.data["memo"] == "276289"
+    # Must not add a row, upload, or save — matches the existing skill's rule exactly.
+    assert driver.select_calls == []
+    assert NEW_ROW_COST_SELECTOR not in driver.filled
+    assert SAVE_BUTTON_SELECTOR not in driver.clicks
+
+
+def test_cost_add_duplicate_check_ignores_spaces(fake_driver_cost_add_duplicate_memo):
+    # Fixture's existing memo is "276 289" (with a space); target "276289"
+    # (no space) must still be recognized as the same invoice number.
+    result = CostAddTool().run(
+        fake_driver_cost_add_duplicate_memo,
+        category="Repair",
+        cost=Decimal("1"),
+        invoice_date=date(2026, 1, 1),
+        vendor_name="Jensen",
+        memo="276289",
+    )
+    assert result.status == ToolStatus.EXISTS
+
+
 def test_cost_add_fails_when_modal_never_opens(fake_driver_cost_add_modal_never_opens):
     with pytest.raises(StepFailure) as exc:
         CostAddTool().run(

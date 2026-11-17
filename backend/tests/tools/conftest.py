@@ -13,7 +13,7 @@ from dealercenter_agent.tools.search_invoice_tool import (
     INVENTORY_ROW_SELECTOR,
     SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
-from dealercenter_agent.tools.cost_add_tool import VENDOR_RESULT_ROW_SELECTOR
+from dealercenter_agent.tools.cost_add_tool import EXISTING_MEMO_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
 
 from ..fakes import FakeBrowserDriver
 
@@ -156,6 +156,16 @@ def fake_driver_cost_add_vendor_found() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.on_wait_visible = lambda sel, t: True  # modal + vendor search box both "open" fine
     driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["JENSEN TIRE & AUTO"]
+    driver.find_all_text_results[EXISTING_MEMO_SELECTOR] = ["00294", "", ""]  # no duplicate
+    return driver
+
+
+@pytest.fixture
+def fake_driver_cost_add_duplicate_memo() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True
+    # Space in the existing memo on purpose — the check must ignore spaces.
+    driver.find_all_text_results[EXISTING_MEMO_SELECTOR] = ["276 289", ""]
     return driver
 
 
