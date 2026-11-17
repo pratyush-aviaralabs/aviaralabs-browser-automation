@@ -7,6 +7,7 @@ from dealercenter_agent.tools.base import StepFailure, ToolStatus
 from dealercenter_agent.tools.cost_add_tool import (
     COST_ADDS_CLOSE_SELECTOR,
     COST_ADDS_LINK_SELECTOR,
+    COST_ADDS_SAVE_BUTTON_SELECTOR,
     MODAL_OPEN_SELECTOR,
     NEW_ROW_COST_SELECTOR,
     NEW_ROW_DATE_SELECTOR,
@@ -35,8 +36,34 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
     assert driver.filled[NEW_ROW_COST_SELECTOR] == "270.00"
     assert driver.typed[NEW_ROW_DATE_SELECTOR] == "11/06/2026"
     assert driver.typed[NEW_ROW_MEMO_SELECTOR] == "276289"
+    assert COST_ADDS_SAVE_BUTTON_SELECTOR in driver.clicks
     assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
     assert SAVE_CONFIRMATION_YES_SELECTOR in driver.clicks
+
+
+def test_cost_add_clean_close_with_no_prompt_is_still_success(fake_driver_cost_add_vendor_found):
+    """If the direct in-dialog Save button already took effect, closing
+    the dialog afterward has nothing unsaved to prompt about — no
+    "Save Confirmation" dialog appears, and that's fine, not a failure."""
+    driver = fake_driver_cost_add_vendor_found
+
+    def on_wait_visible(selector: str, timeout_ms: int) -> bool:
+        return selector != SAVE_CONFIRMATION_YES_SELECTOR
+
+    driver.on_wait_visible = on_wait_visible
+
+    result = CostAddTool().run(
+        driver,
+        category="Repair",
+        cost=Decimal("270.00"),
+        invoice_date=date(2026, 11, 6),
+        vendor_name="Jensen Tire & Auto",
+        memo="276289",
+    )
+    assert result.status == ToolStatus.SUCCESS
+    assert COST_ADDS_SAVE_BUTTON_SELECTOR in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
+    assert SAVE_CONFIRMATION_YES_SELECTOR not in driver.clicks
 
 
 def test_cost_add_auto_save_false_fills_everything_but_does_not_click_save(

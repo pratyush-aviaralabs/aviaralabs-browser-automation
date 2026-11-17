@@ -163,6 +163,18 @@ SAVE_CONFIRMATION_DIALOG_XPATH = (
     "//div[normalize-space(text())='Save Confirmation']]"
 )
 SAVE_CONFIRMATION_YES_SELECTOR = SAVE_CONFIRMATION_DIALOG_XPATH + " >> button:has-text('Yes')"
+# The REAL in-dialog Save button — confirmed live (2026-11-18) via a
+# full button dump of the Cost Adds dialog: it has NO "save-btn" class
+# at all (that belongs exclusively to the page's own top-toolbar Save,
+# confirmed separately — only one ".save-btn" exists on the whole page
+# and it's "not inside a dialog"). It's simply the last plain-text
+# "Save" button inside the dialog, next to "Create Bill". Clicked as a
+# primary attempt before the close-and-confirm fallback below — now
+# that it's correctly scoped, a real force_click on it may well be
+# reliable on its own; closing afterward is harmless either way (clean
+# close if Save already took effect, "unsaved changes" prompt to catch
+# it if not).
+COST_ADDS_SAVE_BUTTON_SELECTOR = COST_ADDS_DIALOG_XPATH + "//button[normalize-space(.)='Save']"
 NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
@@ -171,12 +183,6 @@ NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # lives in the `value` property, not as visible text — find_all_text's
 # inner-text read returns "" here regardless of selector.
 EXISTING_MEMO_SELECTOR = "input[formcontrolname='memo']"
-# No longer used to click Save directly (see SAVE_CONFIRMATION_YES_
-# SELECTOR) — kept only because its ambiguity (matches the PAGE's own
-# top-toolbar Save button, not the dialog's, confirmed live 2026-11-18
-# via console: only one ".save-btn" exists and it's "not inside a
-# dialog") is itself the reason this approach was abandoned.
-SAVE_BUTTON_SELECTOR = "button.save-btn"
 
 MAX_ADD_NEW_ATTEMPTS = 3
 # Module-level, not a default arg, so tests can monkeypatch it to 0.
@@ -359,21 +365,21 @@ class CostAddTool(Tool):
             data["auto_save"] = False
             return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
-        # Confirmed live (2026-11-18), per user: clicking the in-dialog
-        # Save button directly was never reliable (console check: the
-        # ONLY ".save-btn" on the page is "not inside a dialog" — it's
-        # the PAGE's own top-toolbar Save, not the Cost Adds dialog's).
-        # Closing the dialog instead pops a fresh "Save Confirmation"
-        # dialog ("You have unsaved changes. Do you want to save it
-        # first before closing the dialog?"); clicking "Yes" there is
-        # the reliable save path, not fighting any backdrop overlay.
         time.sleep(SAVE_SETTLE_DELAY_SECONDS)
+        # Primary: click the real, correctly-scoped in-dialog Save
+        # button (confirmed live 2026-11-18 via a full button dump —
+        # the earlier SAVE_BUTTON_SELECTOR guess was clicking the
+        # PAGE's own top-toolbar Save button instead, not this one).
+        driver.force_click(COST_ADDS_SAVE_BUTTON_SELECTOR)
+        time.sleep(SAVE_SETTLE_DELAY_SECONDS)
+        # Fallback/confirmation: close the dialog regardless. If Save
+        # already took effect this is a clean close (no prompt). If it
+        # silently didn't, closing with unsaved changes pops a fresh
+        # "Save Confirmation" dialog — confirmed live to be a reliable
+        # save path on its own — and clicking "Yes" catches it.
         driver.click(COST_ADDS_CLOSE_SELECTOR)
-        if not driver.wait_visible(SAVE_CONFIRMATION_YES_SELECTOR, timeout_ms=5000):
-            raise StepFailure(
-                self.name, "closing the Cost Adds dialog did not raise the Save Confirmation prompt"
-            )
-        driver.click(SAVE_CONFIRMATION_YES_SELECTOR)
+        if driver.wait_visible(SAVE_CONFIRMATION_YES_SELECTOR, timeout_ms=5000):
+            driver.click(SAVE_CONFIRMATION_YES_SELECTOR)
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
     def _click_add_new_and_verify(self, driver: BrowserDriver) -> None:
