@@ -377,9 +377,16 @@ class CostAddTool(Tool):
         # silently didn't, closing with unsaved changes pops a fresh
         # "Save Confirmation" dialog — confirmed live to be a reliable
         # save path on its own — and clicking "Yes" catches it.
-        driver.click(COST_ADDS_CLOSE_SELECTOR)
+        #
+        # force_click, not click — confirmed live (2026-11-18): right
+        # after a real Save click, the grid re-renders (the save
+        # actually took effect), and that ongoing re-render kept the
+        # Close button's bounding box from ever settling long enough
+        # for Playwright's plain click() stability wait, hanging 30s
+        # with no actual blocking overlay involved this time.
+        driver.force_click(COST_ADDS_CLOSE_SELECTOR)
         if driver.wait_visible(SAVE_CONFIRMATION_YES_SELECTOR, timeout_ms=5000):
-            driver.click(SAVE_CONFIRMATION_YES_SELECTOR)
+            driver.force_click(SAVE_CONFIRMATION_YES_SELECTOR)
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
     def _click_add_new_and_verify(self, driver: BrowserDriver) -> None:
