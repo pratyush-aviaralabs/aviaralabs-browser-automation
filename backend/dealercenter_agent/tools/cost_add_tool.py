@@ -84,15 +84,28 @@ NEW_ROW_VENDOR_LINK_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-co
 # which also contains plenty of input.k-input-inner elements (every
 # row's own Cost/Category inputs), so wait_visible(VENDOR_SEARCH_INPUT_
 # SELECTOR) kept reporting "still open" even after the vendor dialog
-# had genuinely closed. That false positive then made
-# _close_vendor_dialog() click the OUTER Cost Adds dialog's own Close
-# button instead — explaining why Save hung on every single run,
-# success or failure alike. Scope by the dialog's TITLE TEXT instead,
-# which stays correct (or correctly absent) regardless of what else is
-# stacked or whether the vendor dialog is currently open at all.
+# had genuinely closed.
+#
+# Scoping by "a div[@role='dialog'] that CONTAINS a descendant with
+# this title text" (`.//*[...]`) is ALSO wrong — confirmed live
+# (2026-11-18) via document.evaluate against the live DOM: 76 of 77
+# matches resolved to the OUTER Cost Adds dialog, only 1 to the real
+# vendor dialog. The vendor popup is rendered NESTED inside the Cost
+# Adds dialog's own subtree (confirmed separately via
+# document.activeElement's ancestor chain: kendo-dialog → ... →
+# td.vendor-col → tr → tbody) — not a document-level sibling as
+# originally assumed. Since the vendor dialog's title is a DESCENDANT
+# of the outer Cost Adds div too, `.//*` matches BOTH; `.first` then
+# grabbed one of the Cost Adds-scoped inputs instead, which is why
+# "Jensen" kept landing in the Cost Adds grid's own Sort By combobox.
+#
+# Fix: require the title span to be this dialog's own DIRECT titlebar
+# child (kendo-dialog-titlebar/span, not .//*) — true only for the
+# dialog whose OWN immediate title is "Search or Add Vendor", not an
+# ancestor that merely contains it somewhere deeper.
 VENDOR_DIALOG_XPATH = (
     "xpath=//div[@role='dialog']"
-    "[.//*[contains(@class,'k-dialog-title') and normalize-space(text())='Search or Add Vendor']]"
+    "[kendo-dialog-titlebar/span[contains(@class,'k-dialog-title') and normalize-space(text())='Search or Add Vendor']]"
 )
 # Confirmed live (2026-11-18): the input has NO type attribute at all
 # (not type='text') — it's a bare <input class="k-input-inner"> inside
