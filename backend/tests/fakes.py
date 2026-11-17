@@ -17,6 +17,7 @@ class FakeBrowserDriver(BrowserDriver):
         self.submit_clicks: list[str] = []
         self.dismiss_called = False
         self.get_text_value = ""
+        self.find_all_text_results: dict[str, list[str]] = {}
         self.on_click_submit_near: Callable[[str], None] | None = None
         self.on_wait_visible: Callable[[str, int], bool] | None = None
 
@@ -47,6 +48,9 @@ class FakeBrowserDriver(BrowserDriver):
 
     def get_text(self, selector: str) -> str:
         return self.get_text_value
+
+    def find_all_text(self, selector: str) -> list[str]:
+        return self.find_all_text_results.get(selector, [])
 
     def save_session(self) -> dict:
         return {"cookies": [], "origins": []}

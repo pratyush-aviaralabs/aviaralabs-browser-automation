@@ -30,3 +30,8 @@ def login_form_fixture_url() -> str:
 @pytest.fixture
 def modal_chain_fixture_url() -> str:
     return (FIXTURES_DIR / "modal_chain.html").as_uri()
+
+
+@pytest.fixture
+def rows_fixture_url() -> str:
+    return (FIXTURES_DIR / "rows.html").as_uri()

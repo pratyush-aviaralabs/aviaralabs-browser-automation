@@ -39,6 +39,13 @@ class BrowserDriver(ABC):
     def get_text(self, selector: str) -> str: ...
 
     @abstractmethod
+    def find_all_text(self, selector: str) -> list[str]:
+        """Text of every element matching selector, one entry per match —
+        how a Tool counts rows (one match vs. ambiguous vs. none) instead
+        of parsing a single blob of concatenated text."""
+        ...
+
+    @abstractmethod
     def save_session(self) -> dict:
         """Capture the current authenticated state for persistence.
         There is deliberately no matching load_session(state) here —

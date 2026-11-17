@@ -97,6 +97,9 @@ class PlaywrightDriver(BrowserDriver):
     def get_text(self, selector: str) -> str:
         return self.page.locator(selector).first.inner_text()
 
+    def find_all_text(self, selector: str) -> list[str]:
+        return self.page.locator(selector).all_inner_texts()
+
     def save_session(self) -> dict:
         return self.page.context.storage_state()
 

@@ -39,3 +39,9 @@ def test_save_session_returns_storage_state_dict(playwright_page, login_form_fix
     state = driver.save_session()
     assert "cookies" in state
     assert "origins" in state
+
+
+def test_find_all_text_returns_one_entry_per_match(playwright_page, rows_fixture_url):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(rows_fixture_url)
+    assert driver.find_all_text(".row") == ["Row A", "Row B", "Row C"]

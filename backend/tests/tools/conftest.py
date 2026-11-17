@@ -8,6 +8,10 @@ from dealercenter_agent.tools.login_tool import (
     SEARCH_BOX_SELECTOR,
     USERNAME_SELECTOR,
 )
+from dealercenter_agent.tools.search_invoice_tool import (
+    DEAL_ROW_SELECTOR,
+    INVENTORY_ROW_SELECTOR,
+)
 
 from ..fakes import FakeBrowserDriver
 
@@ -64,3 +68,33 @@ def fake_driver_requires_mfa() -> FakeBrowserDriver:
 @pytest.fixture
 def fake_driver_always_rejects_mfa() -> FakeBrowserDriver:
     return _stage_machine_driver(mfa_accepts=False)
+
+
+@pytest.fixture
+def fake_driver_one_inventory_match() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["2022 FORD F150 ... Last 6 VIN: G16336"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_only_deal_match() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = []
+    driver.find_all_text_results[DEAL_ROW_SELECTOR] = ["Deal #: 16228 ... Last 6 VIN: G16336"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_no_matches() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = []
+    driver.find_all_text_results[DEAL_ROW_SELECTOR] = []
+    return driver
+
+
+@pytest.fixture
+def fake_driver_two_inventory_matches() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["row one", "row two"]
+    return driver
