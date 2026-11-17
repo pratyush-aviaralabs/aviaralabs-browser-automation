@@ -14,7 +14,11 @@ from dealercenter_agent.tools.search_invoice_tool import (
     SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
 from dealercenter_agent.tools.cost_add_tool import EXISTING_MEMO_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
-from dealercenter_agent.tools.file_upload_tool import EXISTING_FILE_NAME_SELECTOR, NEXT_PAGE_BUTTON_SELECTOR
+from dealercenter_agent.tools.file_upload_tool import (
+    DUPLICATE_FILENAME_ERROR_SELECTOR,
+    EXISTING_FILE_NAME_SELECTOR,
+    NEXT_PAGE_BUTTON_SELECTOR,
+)
 
 from ..fakes import FakeBrowserDriver
 
@@ -224,7 +228,10 @@ def fake_driver_cost_add_modal_never_opens() -> FakeBrowserDriver:
 @pytest.fixture
 def fake_driver_no_matching_files() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
-    driver.on_wait_visible = lambda sel, t: True
+    # Everything "appears" except the duplicate-filename error dialog —
+    # a bare lambda-True-for-everything would wrongly trigger that
+    # branch too and turn every "normal success" test into EXISTS.
+    driver.on_wait_visible = lambda sel, t: sel != DUPLICATE_FILENAME_ERROR_SELECTOR
     driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Monson 00294"]
     return driver
 
@@ -232,8 +239,25 @@ def fake_driver_no_matching_files() -> FakeBrowserDriver:
 @pytest.fixture
 def fake_driver_duplicate_file() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
-    driver.on_wait_visible = lambda sel, t: True
+    driver.on_wait_visible = lambda sel, t: sel != DUPLICATE_FILENAME_ERROR_SELECTOR
     driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Omaha Glass 276289"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_duplicate_filename_rejected_by_server() -> FakeBrowserDriver:
+    """No invoice-number match in the grid beforehand, but DealerCenter's
+    own server rejects the upload itself as a literal-filename
+    collision — a different duplicate signal than our invoice-number
+    check, confirmed live (2026-11-17). This is what previously produced
+    a false SUCCESS: a broad text= check matched the filename quoted
+    inside this very error dialog."""
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: sel in (
+        EXISTING_FILE_NAME_SELECTOR,
+        DUPLICATE_FILENAME_ERROR_SELECTOR,
+    )
+    driver.find_all_text_results[EXISTING_FILE_NAME_SELECTOR] = ["Monson 00294"]
     return driver
 
 

@@ -82,6 +82,22 @@ def test_upload_finds_duplicate_sitting_only_on_page_two(fake_driver_duplicate_o
     assert driver.uploaded_files == []
 
 
+def test_upload_treats_server_duplicate_filename_rejection_as_exists(
+    fake_driver_duplicate_filename_rejected_by_server, small_pdf
+):
+    # Reproduces the actual live bug: DealerCenter's own "already a file
+    # named X" dialog was being read as a false SUCCESS by a check that
+    # matched the filename quoted inside the dialog's own text.
+    driver = fake_driver_duplicate_filename_rejected_by_server
+    result = FileUploadTool().run(
+        driver,
+        local_pdf_path=str(small_pdf),
+        invoice_number="1",
+    )
+    assert result.status == ToolStatus.EXISTS
+    assert driver.dismiss_called is True
+
+
 def test_upload_fails_when_files_tab_does_not_load(fake_driver_files_tab_never_loads, small_pdf):
     with pytest.raises(StepFailure) as exc:
         FileUploadTool().run(

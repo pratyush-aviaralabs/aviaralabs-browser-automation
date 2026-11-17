@@ -23,6 +23,10 @@ NEXT_PAGE_BUTTON_SELECTOR = ".k-pager-nav[title='Go to the next page']"
 # intermediate "set filename/category, then click Save" step, which is
 # what the first version of this tool incorrectly assumed.
 BROWSE_BUTTON_SELECTOR = "button:has-text('Browse')"
+# DealerCenter's own server-side duplicate-FILENAME check (distinct from
+# our invoice-number check in the grid) — fires when a file with this
+# exact literal name was already uploaded. Confirmed live (2026-11-17).
+DUPLICATE_FILENAME_ERROR_SELECTOR = "text=/There is already a file named/i"
 
 
 def all_file_names(driver: BrowserDriver, max_pages: int = MAX_GRID_PAGES) -> list[str]:
@@ -97,7 +101,19 @@ class FileUploadTool(Tool):
 
         driver.upload_via_button(BROWSE_BUTTON_SELECTOR, str(path))
 
-        if not driver.wait_visible(f"text={path.stem}", timeout_ms=15000):
+        # DealerCenter rejecting on a literal filename collision is a
+        # real duplicate signal too, just a different one than our own
+        # invoice-number check above — treat it the same way: EXISTS,
+        # not a failure, after clearing the dialog it leaves behind.
+        if driver.wait_visible(DUPLICATE_FILENAME_ERROR_SELECTOR, timeout_ms=3000):
+            driver.dismiss_blocking_modals()
+            return ToolResult(status=ToolStatus.EXISTS, data={"uploaded_as": path.stem})
+
+        # Scoped to an actual grid row, not "this text anywhere on the
+        # page" — a generic text= check matched the filename quoted
+        # inside the duplicate-filename error dialog above and reported
+        # a false SUCCESS for an upload DealerCenter had just rejected.
+        if not driver.wait_visible(f"{EXISTING_FILE_NAME_SELECTOR}:has-text('{path.stem}')", timeout_ms=15000):
             raise StepFailure(
                 self.name, f"uploaded but {path.stem!r} never appeared in the Files grid"
             )
