@@ -212,7 +212,11 @@ def test_cost_add_returns_exists_without_any_writes_when_memo_already_present(
     # Must not add a row, upload, or save — matches the existing skill's rule exactly.
     assert driver.select_calls == []
     assert NEW_ROW_COST_SELECTOR not in driver.filled
-    assert COST_ADDS_CLOSE_SELECTOR not in driver.clicks
+    assert COST_ADDS_SAVE_BUTTON_SELECTOR not in driver.clicks
+    # Must still close the dialog — confirmed live (2026-11-18) that
+    # leaving it open on EXISTS blocked the next pipeline tool (Files
+    # tab click hung 30s on this dialog's own backdrop).
+    assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
 
 
 def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_duplicate_memo):

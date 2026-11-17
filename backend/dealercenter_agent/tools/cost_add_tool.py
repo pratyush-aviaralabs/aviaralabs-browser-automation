@@ -298,6 +298,11 @@ class CostAddTool(Tool):
             existing_memos = driver.find_all_values(EXISTING_MEMO_SELECTOR)
             target = _normalize_memo(memo)
             if any(_normalize_memo(m) == target for m in existing_memos if m.strip()):
+                # Must close the dialog before returning — confirmed
+                # live (2026-11-18) that leaving it open here blocked
+                # the pipeline's next tool (clicking the Files tab got
+                # stuck 30s on this dialog's own backdrop).
+                driver.force_click(COST_ADDS_CLOSE_SELECTOR)
                 return ToolResult(status=ToolStatus.EXISTS, data={"memo": memo})
 
         # Always click Add New (with verification) before filling,
