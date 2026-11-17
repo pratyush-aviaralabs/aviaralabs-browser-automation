@@ -31,21 +31,19 @@ class BrowserDriver(ABC):
 
     @abstractmethod
     def force_click(self, selector: str) -> None:
-        """Invoke the target element's own .click() DOM method directly
-        — bypasses coordinate-based hit testing entirely, firing the
-        element's click handlers regardless of what's visually on top of
-        it. Only for a target already confirmed visible/enabled/stable,
-        where something else merely overlaps it visually without being a
-        real blocker. Confirmed live (2026-11-18): the Cost Adds
-        dialog's own backdrop overlay (SUPPOSED to stay present the
-        entire time that dialog is open — the permanent background
-        dimmer, not a transient state to wait out) sat on top of the
-        Save button at its exact on-screen coordinates. A plain click()
-        hung 30s on it; Playwright's click(force=True) skipped that
-        wait but still dispatched a real coordinate-based mouse click
-        that the overlay absorbed instead — no error, but nothing got
-        saved. Only calling .click() as a DOM method (no coordinates
-        involved at all) actually fired the button's handler."""
+        """A real, trusted click (same mechanism as an actual human
+        click) that skips Playwright's own pre-click "is anything
+        blocking this" wait — only for a target already confirmed
+        visible/enabled/stable, where the caller has already dealt with
+        (or deliberately chosen to skip past) a known transient blocker.
+        Confirmed live (2026-11-18): calling the DOM element's own
+        .click() method instead (bypassing coordinates entirely) fires
+        an UNTRUSTED event (isTrusted: false) — no automated run using
+        that ever showed the app's own save-confirmation toast, while a
+        genuine human click always did and always persisted. Use this,
+        not a DOM-method click, and have the caller wait out any real
+        blocking overlay first rather than relying on this to paper
+        over one."""
         ...
 
     @abstractmethod

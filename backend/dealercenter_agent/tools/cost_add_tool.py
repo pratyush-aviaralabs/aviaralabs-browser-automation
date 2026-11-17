@@ -130,6 +130,24 @@ VENDOR_DIALOG_CLOSE_SELECTOR = VENDOR_DIALOG_XPATH + "//button[@title='Close']"
 VENDOR_DIALOG_OVERLAY_SELECTOR = (
     "xpath=(" + VENDOR_DIALOG_XPATH[len("xpath="):] + ")/preceding-sibling::div[contains(@class,'k-overlay')]"
 )
+# The Cost Adds dialog's OWN backdrop — same preceding-sibling pattern
+# as the vendor dialog's, scoped by its OWN direct titlebar child
+# (title "Cost Adds") the same way VENDOR_DIALOG_XPATH is. Confirmed
+# live (2026-11-18): a genuine human click on Save always persists
+# (toast: "Inventory Successfully Saved") immediately after filling
+# fields by hand; automation's near-instant fill+click often didn't,
+# with Playwright reporting this exact backdrop as intercepting the
+# click for the full 30s wait every time. A human's natural pause
+# between filling the last field and clicking Save is apparently long
+# enough for this to settle; explicitly waiting for it to clear before
+# clicking (rather than assuming it's permanently there) is the fix.
+COST_ADDS_DIALOG_XPATH = (
+    "xpath=//div[@role='dialog']"
+    "[kendo-dialog-titlebar/span[contains(@class,'k-dialog-title') and normalize-space(text())='Cost Adds']]"
+)
+COST_ADDS_OVERLAY_SELECTOR = (
+    "xpath=(" + COST_ADDS_DIALOG_XPATH[len("xpath="):] + ")/preceding-sibling::div[contains(@class,'k-overlay')]"
+)
 NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
@@ -323,18 +341,13 @@ class CostAddTool(Tool):
 
         # Confirmed live (2026-11-18): a human filling the same fields
         # by hand and clicking Save a moment later always persists
-        # correctly; automation filling everything near-instantly and
-        # clicking Save immediately after intermittently didn't. A
-        # short pause here approximates that natural timing gap — cheap
-        # insurance alongside the manual script's retry-the-whole-write
-        # fallback, not a replacement for it.
+        # correctly (visible "Inventory Successfully Saved" toast);
+        # automation's near-instant fill+click never showed that toast
+        # in any run. Wait for the Cost Adds dialog's own backdrop to
+        # actually clear — not a flat sleep, and not assumed permanent —
+        # before clicking Save for real.
         time.sleep(SAVE_SETTLE_DELAY_SECONDS)
-        # force_click, not click — confirmed live (2026-11-18) that the
-        # Cost Adds dialog's own backdrop (permanently present the whole
-        # time the dialog is open, not a transient state) registers as
-        # intercepting clicks on this button, hanging a plain click()
-        # for 30s even with the button reported visible/enabled/stable
-        # throughout. See BrowserDriver.force_click.
+        driver.wait_hidden(COST_ADDS_OVERLAY_SELECTOR, timeout_ms=20000)
         driver.force_click(SAVE_BUTTON_SELECTOR)
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
 

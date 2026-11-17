@@ -49,16 +49,20 @@ class PlaywrightDriver(BrowserDriver):
         self.page.locator(selector).first.click()
 
     def force_click(self, selector: str) -> None:
-        # evaluate(el => el.click()), NOT .click(force=True) — confirmed
-        # live (2026-11-18) that force=True still dispatches a real
-        # mouse click at the element's on-screen coordinates (it only
-        # skips Playwright's own pre-click actionability check), so a
-        # visually-overlapping element still absorbed the click: no
-        # error was raised, but the Save button's own handler never
-        # fired and nothing was actually persisted. Calling the DOM
-        # element's own .click() method bypasses coordinate-based hit
-        # testing entirely and fires its handlers directly.
-        self.page.locator(selector).first.evaluate("el => el.click()")
+        # click(force=True), NOT evaluate("el => el.click()") — confirmed
+        # live (2026-11-18): the DOM .click() method fires an UNTRUSTED
+        # synthetic event (event.isTrusted === false). No automated run
+        # using it ever showed the app's own "Inventory Successfully
+        # Saved" toast, while a genuine human click always did and
+        # always persisted — strong evidence the real save handler
+        # requires a trusted event. click(force=True) still dispatches a
+        # real CDP-level mouse click (isTrusted: true, same mechanism a
+        # human click uses) at the element's coordinates; it only skips
+        # Playwright's own pre-click actionability wait. Caller is
+        # responsible for waiting out any real blocking overlay first
+        # (see CostAddTool's wait_hidden on the dialog's own backdrop)
+        # rather than relying on this to skip past a genuine blocker.
+        self.page.locator(selector).first.click(force=True)
 
     def click_submit_near(self, field_selector: str) -> None:
         field = self.page.locator(field_selector).first
