@@ -296,7 +296,13 @@ class CostAddTool(Tool):
 
         vendor_warning = self._select_vendor(driver, vendor_name)
 
-        driver.fill(NEW_ROW_MEMO_SELECTOR, memo)
+        # type_text, not fill — confirmed live (2026-11-18) that fill()
+        # left Memo visually correct but not actually saved: after a
+        # refresh, Category/Cost/Vendor/Date all persisted but Memo was
+        # blank. Same bug class as the masked date field and the vendor
+        # search box — direct value assignment doesn't reach the
+        # underlying reactive form control the way real keystrokes do.
+        driver.type_text(NEW_ROW_MEMO_SELECTOR, memo)
         # force_click, not click — confirmed live (2026-11-18) that the
         # Cost Adds dialog's own backdrop (permanently present the whole
         # time the dialog is open, not a transient state) registers as
