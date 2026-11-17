@@ -13,6 +13,7 @@ class FakeBrowserDriver(BrowserDriver):
     def __init__(self):
         self.current_url_value = "https://app.dealercenter.net/"
         self.filled: dict[str, str] = {}
+        self.typed: dict[str, str] = {}
         self.clicks: list[str] = []
         self.submit_clicks: list[str] = []
         self.dismiss_called = False
@@ -35,6 +36,9 @@ class FakeBrowserDriver(BrowserDriver):
 
     def fill(self, selector: str, value: str) -> None:
         self.filled[selector] = value
+
+    def type_text(self, selector: str, text: str) -> None:
+        self.typed[selector] = text
 
     def click(self, selector: str) -> None:
         self.clicks.append(selector)

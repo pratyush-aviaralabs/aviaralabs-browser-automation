@@ -39,6 +39,12 @@ class PlaywrightDriver(BrowserDriver):
     def fill(self, selector: str, value: str) -> None:
         self.page.locator(selector).first.fill(value)
 
+    def type_text(self, selector: str, text: str) -> None:
+        locator = self.page.locator(selector).first
+        locator.click()
+        locator.press("Control+A")
+        locator.press_sequentially(text)
+
     def click(self, selector: str) -> None:
         self.page.locator(selector).first.click()
 

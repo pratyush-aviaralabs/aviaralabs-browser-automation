@@ -31,7 +31,7 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
     assert COST_ADDS_LINK_SELECTOR in driver.clicks
     assert (NEW_ROW_CATEGORY_SELECTOR, "Repair") in driver.select_calls
     assert driver.filled[NEW_ROW_COST_SELECTOR] == "270.00"
-    assert driver.filled[NEW_ROW_DATE_SELECTOR] == "11/06/2026"
+    assert driver.typed[NEW_ROW_DATE_SELECTOR] == "11/06/2026"
     assert driver.filled[NEW_ROW_MEMO_SELECTOR] == "276289"
     assert SAVE_BUTTON_SELECTOR in driver.clicks
 
@@ -155,8 +155,8 @@ def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_du
     from dealercenter_agent.tools.cost_add_tool import ROW_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
 
     driver = fake_driver_cost_add_duplicate_memo
-    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["Jensen Tire & Auto"]
     row_count = {"n": 5}
+    vendor_calls = {"n": 0}
 
     def on_click(selector: str) -> None:
         if selector == MODAL_OPEN_SELECTOR:
@@ -166,7 +166,10 @@ def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_du
         if selector == ROW_SELECTOR:
             return ["row"] * row_count["n"]
         if selector == VENDOR_RESULT_ROW_SELECTOR:
-            return ["Jensen Tire & Auto"]
+            vendor_calls["n"] += 1
+            # First read (pre-filter baseline) differs from the rest, so
+            # the retry-until-changed read doesn't waste real sleep time.
+            return ["UNFILTERED VENDOR " + str(i) for i in range(98)] if vendor_calls["n"] == 1 else ["Jensen Tire & Auto"]
         return []
 
     driver.on_click = on_click

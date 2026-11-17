@@ -16,6 +16,17 @@ class BrowserDriver(ABC):
     def fill(self, selector: str, value: str) -> None: ...
 
     @abstractmethod
+    def type_text(self, selector: str, text: str) -> None:
+        """Click the element, select all existing content, and type text
+        as real keystrokes — unlike fill(), which sets the DOM value
+        property directly. Required for masked inputs (e.g. Kendo date
+        pickers): confirmed live (2026-11-18) that fill() on one
+        produced corrupted text ("11/18/0006" instead of "11/18/2026"),
+        since direct value assignment bypasses the input's own mask
+        logic that keystroke-by-keystroke typing goes through."""
+        ...
+
+    @abstractmethod
     def click(self, selector: str) -> None: ...
 
     @abstractmethod

@@ -184,11 +184,29 @@ def fake_driver_two_inventory_matches() -> FakeBrowserDriver:
     return driver
 
 
+def _vendor_dialog_driver(filtered_results: list[str]) -> FakeBrowserDriver:
+    """Models the real dialog: the FIRST read (before typing a query)
+    sees the unfiltered ~98-vendor baseline; every read after that sees
+    the already-filtered result — same shape as the real async-filter
+    race _read_vendor_results_with_retry exists to survive, without
+    wasting real retry/sleep time in the test."""
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True
+    state = {"calls": 0}
+
+    def on_find_all_text(selector: str) -> list[str]:
+        if selector != VENDOR_RESULT_ROW_SELECTOR:
+            return []
+        state["calls"] += 1
+        return [f"UNFILTERED VENDOR {i}" for i in range(98)] if state["calls"] == 1 else filtered_results
+
+    driver.on_find_all_text = on_find_all_text
+    return driver
+
+
 @pytest.fixture
 def fake_driver_cost_add_vendor_found() -> FakeBrowserDriver:
-    driver = FakeBrowserDriver()
-    driver.on_wait_visible = lambda sel, t: True  # modal + vendor search box both "open" fine
-    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["JENSEN TIRE & AUTO"]
+    driver = _vendor_dialog_driver(["JENSEN TIRE & AUTO"])
     driver.find_all_values_results[EXISTING_MEMO_SELECTOR] = ["00294", "", ""]  # no duplicate
     return driver
 
@@ -204,18 +222,12 @@ def fake_driver_cost_add_duplicate_memo() -> FakeBrowserDriver:
 
 @pytest.fixture
 def fake_driver_cost_add_no_vendor_match() -> FakeBrowserDriver:
-    driver = FakeBrowserDriver()
-    driver.on_wait_visible = lambda sel, t: True
-    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = []
-    return driver
+    return _vendor_dialog_driver([])
 
 
 @pytest.fixture
 def fake_driver_cost_add_ambiguous_vendor() -> FakeBrowserDriver:
-    driver = FakeBrowserDriver()
-    driver.on_wait_visible = lambda sel, t: True
-    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["Jensen Tire", "Jensen Auto Body"]
-    return driver
+    return _vendor_dialog_driver(["Jensen Tire", "Jensen Auto Body"])
 
 
 @pytest.fixture

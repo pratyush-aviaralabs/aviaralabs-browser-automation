@@ -110,6 +110,25 @@ def _normalize_memo(text: str) -> str:
     return text.replace(" ", "")
 
 
+def _read_vendor_results_with_retry(
+    driver: BrowserDriver, before_count: int, attempts: int = 5, delay_ms: int = 400
+) -> list[str]:
+    """Same bug class as SearchInvoiceTool's dropdown race: reading the
+    result list right after fill() can catch it before Angular
+    re-renders from the unfiltered ~98-vendor list down to the filtered
+    one. Retry until the count actually changes from its pre-filter
+    baseline, not just until it's non-empty (the unfiltered list is
+    non-empty too)."""
+    results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
+    for attempt in range(attempts):
+        if len(results) != before_count:
+            return results
+        if attempt < attempts - 1:
+            time.sleep(delay_ms / 1000)
+            results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
+    return results
+
+
 def _is_blank_amount(raw: str) -> bool:
     """True for "", "$0.00", "0", "0.00", etc. — anything that isn't a
     real nonzero amount. Used by the blank-row guard; unparseable input
@@ -210,7 +229,10 @@ class CostAddTool(Tool):
         # failure rather than aborting the whole entry, per instruction.
         driver.select_option(NEW_ROW_CATEGORY_SELECTOR, category)
         driver.fill(NEW_ROW_COST_SELECTOR, f"{cost:.2f}")
-        driver.fill(NEW_ROW_DATE_SELECTOR, invoice_date.strftime("%m/%d/%Y"))
+        # type_text, not fill — confirmed live (2026-11-18) that fill()
+        # corrupted this masked Kendo date input ("11/18/0006" instead of
+        # "11/18/2026"), since direct value assignment bypasses its mask.
+        driver.type_text(NEW_ROW_DATE_SELECTOR, invoice_date.strftime("%m/%d/%Y"))
 
         vendor_warning = self._select_vendor(driver, vendor_name)
 
@@ -258,9 +280,10 @@ class CostAddTool(Tool):
             if not driver.wait_visible(VENDOR_SEARCH_INPUT_SELECTOR, timeout_ms=5000):
                 self._close_vendor_dialog(driver)
                 return "vendor search box did not open — Vendor left unset"
-            driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
 
-            results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
+            before_count = len(driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR))
+            driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
+            results = _read_vendor_results_with_retry(driver, before_count)
             if not results:
                 self._close_vendor_dialog(driver)
                 return f"no vendor match for {vendor_name!r} — Vendor left unset"
