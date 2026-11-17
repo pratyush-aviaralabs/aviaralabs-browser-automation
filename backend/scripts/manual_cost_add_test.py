@@ -38,6 +38,13 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATE_FILE = PROJECT_ROOT / ".auth_state.json"
 load_dotenv(PROJECT_ROOT / ".env")
 
+# Confirmed live (2026-11-18): a reported SUCCESS save can still
+# silently fail to persist server-side — intermittent, cause not fully
+# pinned down (force_click's DOM .click() doesn't guarantee the
+# underlying save request actually fires every time). Rather than chase
+# that further, retry the whole write once more if verification fails.
+MAX_SAVE_ATTEMPTS = 2
+
 
 def terminal_mfa_code_provider() -> str:
     return input("    Enter the 6-digit MFA code here: ").strip()
@@ -87,27 +94,35 @@ def main():
             if search_result.data["match_type"] != "inventory":
                 print("[!] Deal-path click-through isn't built yet — stopping here.")
             else:
-                cost_add_result = CostAddTool().run(
-                    driver,
-                    category=category,
-                    cost=cost,
-                    invoice_date=invoice_date,
-                    vendor_name=vendor_name,
-                    memo=invoice_number,
-                    skip_duplicate_check=skip_duplicate_check,
-                )
-                print(f"[cost_add] {cost_add_result.status} data={cost_add_result.data}")
+                for attempt in range(1, MAX_SAVE_ATTEMPTS + 1):
+                    cost_add_result = CostAddTool().run(
+                        driver,
+                        category=category,
+                        cost=cost,
+                        invoice_date=invoice_date,
+                        vendor_name=vendor_name,
+                        memo=invoice_number,
+                        skip_duplicate_check=skip_duplicate_check,
+                    )
+                    print(f"[cost_add] attempt {attempt}: {cost_add_result.status} "
+                          f"data={cost_add_result.data}")
 
-                # Don't trust CostAddTool's own SUCCESS — confirmed live
-                # (2026-11-18) that a reported SUCCESS save can still
-                # silently drop a field. Only meaningful after an actual
-                # write; EXISTS means nothing new was saved to check.
-                if cost_add_result.status.name == "SUCCESS":
+                    if cost_add_result.status.name != "SUCCESS":
+                        break  # EXISTS or anything else — nothing new was saved, don't retry
+
+                    # Don't trust CostAddTool's own SUCCESS — confirmed
+                    # live (2026-11-18) that a reported SUCCESS save can
+                    # still silently fail to persist server-side.
                     verify_result = VerifyCostAddTool().run(
                         driver, memo=invoice_number, expected_cost=cost
                     )
-                    print(f"[verify_cost_add] {verify_result.status} "
+                    print(f"[verify_cost_add] attempt {attempt}: {verify_result.status} "
                           f"{verify_result.data if verify_result.data else verify_result.reason}")
+
+                    if verify_result.status.name == "SUCCESS":
+                        break
+                    if attempt < MAX_SAVE_ATTEMPTS:
+                        print("[!] Verification failed — retrying the write once more.")
         except StepFailure as exc:
             print(f"[FAILED] {exc.tool_name}: {exc.reason}")
         except Exception as exc:
