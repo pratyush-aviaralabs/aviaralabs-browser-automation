@@ -3,11 +3,16 @@ from .base import StepFailure, Tool, ToolResult, ToolStatus
 
 SEARCH_BOX_SELECTOR = "input[type='search'], input[placeholder*='Search' i]"
 
-# Best-guess placeholders, unverified against the live search dropdown's
-# real DOM (only seen in screenshots so far, same situation the POC was
-# in before its selectors got corrected against the real page). These are
-# the one place to fix once the actual markup is confirmed.
-INVENTORY_ROW_SELECTOR = "[data-section='inventory'] .search-result-row"
+# INVENTORY_ROW_SELECTOR confirmed against the real DOM (console dump,
+# 2026-11-17): each Inventory match renders as exactly one
+# <div class="search-result-item ..."> inside the Inventory section.
+INVENTORY_ROW_SELECTOR = ".search-result-item"
+# DEAL_ROW_SELECTOR is still an unverified placeholder — we haven't seen
+# a live Deal match yet. CAUTION if/when fixing this: if Deal rows turn
+# out to reuse the same generic .search-result-item class (plausible,
+# since it looks like one shared Angular component), this selector MUST
+# be scoped to the Deal section specifically, or it'll double-count the
+# same elements INVENTORY_ROW_SELECTOR already counted.
 DEAL_ROW_SELECTOR = "[data-section='deal'] .search-result-row"
 # Confirms the click actually landed on the vehicle detail page (where
 # Cost Info / Cost Adds live) — also a placeholder.
