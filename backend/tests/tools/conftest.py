@@ -189,7 +189,7 @@ def fake_driver_cost_add_vendor_found() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.on_wait_visible = lambda sel, t: True  # modal + vendor search box both "open" fine
     driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["JENSEN TIRE & AUTO"]
-    driver.find_all_text_results[EXISTING_MEMO_SELECTOR] = ["00294", "", ""]  # no duplicate
+    driver.find_all_values_results[EXISTING_MEMO_SELECTOR] = ["00294", "", ""]  # no duplicate
     return driver
 
 
@@ -198,7 +198,7 @@ def fake_driver_cost_add_duplicate_memo() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.on_wait_visible = lambda sel, t: True
     # Space in the existing memo on purpose — the check must ignore spaces.
-    driver.find_all_text_results[EXISTING_MEMO_SELECTOR] = ["276 289", ""]
+    driver.find_all_values_results[EXISTING_MEMO_SELECTOR] = ["276 289", ""]
     return driver
 
 

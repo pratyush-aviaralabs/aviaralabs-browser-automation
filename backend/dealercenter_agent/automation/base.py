@@ -65,6 +65,16 @@ class BrowserDriver(ABC):
         ...
 
     @abstractmethod
+    def find_all_values(self, selector: str) -> list[str]:
+        """Like find_all_text, but reads each matched element's `value`
+        property instead of its text content. Confirmed live (2026-11-17)
+        that DealerCenter's Cost Adds grid renders the Memo (and every
+        other field) as an Angular-bound <input formcontrolname="...">
+        with no visible text node — find_all_text's inner-text read
+        returns "" for these regardless of selector correctness."""
+        ...
+
+    @abstractmethod
     def save_session(self) -> dict:
         """Capture the current authenticated state for persistence.
         There is deliberately no matching load_session(state) here —

@@ -109,6 +109,9 @@ class PlaywrightDriver(BrowserDriver):
     def find_all_text(self, selector: str) -> list[str]:
         return self.page.locator(selector).all_inner_texts()
 
+    def find_all_values(self, selector: str) -> list[str]:
+        return self.page.locator(selector).evaluate_all("els => els.map(el => el.value)")
+
     def save_session(self) -> dict:
         return self.page.context.storage_state()
 

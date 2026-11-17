@@ -20,19 +20,40 @@ COST_ADDS_LINK_SELECTOR = "text=/Cost Adds/i >> xpath=following::button[1]"
 # confirm the modal opened, since the exact new-row field selectors
 # below are still unverified.
 MODAL_OPEN_SELECTOR = "button:has-text('Add New')"
-NEW_ROW_DESCRIPTION_SELECTOR = ".k-grid-table tr:last-child [data-field='Description']"
-NEW_ROW_CATEGORY_SELECTOR = ".k-grid-table tr:last-child [data-field='Category']"
-NEW_ROW_COST_SELECTOR = ".k-grid-table tr:last-child [data-field='Cost'] input"
-NEW_ROW_DATE_SELECTOR = ".k-grid-table tr:last-child [data-field='DateAdded'] input"
-NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR = ".k-grid-table tr:last-child .vendor-search-icon"
+
+# Everything below confirmed against the real DOM via console dump
+# (2026-11-17): this is NOT a plain Kendo grid with data-field cells —
+# it's an Angular reactive form, each cell identified by
+# formcontrolname (subCategoryID, amount, referenceNumber,
+# vendorPartnerId/searchText, dateAdded, memo). There's always exactly
+# one blank, already-rendered row at the end of the table ready to
+# fill in — "Add New" appends an ADDITIONAL blank row on top of that,
+# it is never required for the first (or only) entry, confirmed live
+# across multiple vehicles. No data-field attributes exist anywhere in
+# this table; the earlier guesses were a different grid style entirely.
+#
+# The Description column's <kendo-combobox> has NO formcontrolname —
+# confirmed every existing row shows Description == Category (e.g.
+# "Repair"/"Repair", "Parts"/"Parts"), so Description auto-fills from
+# the Category selection and is never set directly.
+NEW_ROW_CATEGORY_SELECTOR = "tr:last-child .category-col input.k-input-inner"
+NEW_ROW_COST_SELECTOR = "tr:last-child .cost-col input.k-input-inner"
+NEW_ROW_DATE_SELECTOR = "tr:last-child .date-added-col input.k-input-inner"
+NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR = "tr:last-child .vendor-col button[title='Search']"
+# The "Search or Add Vendor" dialog this button opens, and its result
+# row, are still UNVERIFIED — not reached yet, needs its own live
+# console check before this path is trusted.
 VENDOR_SEARCH_INPUT_SELECTOR = "[role='dialog'] input[placeholder*='Search' i]"
 VENDOR_RESULT_ROW_SELECTOR = "[role='dialog'] .vendor-search-result-row"
-NEW_ROW_MEMO_SELECTOR = ".k-grid-table tr:last-child [data-field='Memo'] input"
+NEW_ROW_MEMO_SELECTOR = "tr:last-child input[formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
-# per the existing skill's duplicate-invoice rule.
-EXISTING_MEMO_SELECTOR = ".k-grid-table [data-field='Memo']"
-SAVE_BUTTON_SELECTOR = "button:has-text('Save')"
+# per the existing skill's duplicate-invoice rule. Must be read with
+# find_all_values, NOT find_all_text: this is an <input>, so its value
+# lives in the `value` property, not as visible text — find_all_text's
+# inner-text read returns "" here regardless of selector.
+EXISTING_MEMO_SELECTOR = "input[formcontrolname='memo']"
+SAVE_BUTTON_SELECTOR = "button.save-btn"
 
 
 def _normalize_memo(text: str) -> str:
@@ -73,12 +94,14 @@ class CostAddTool(Tool):
         if not driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=10000):
             raise StepFailure(self.name, "Cost Adds modal did not open")
 
-        existing_memos = driver.find_all_text(EXISTING_MEMO_SELECTOR)
+        existing_memos = driver.find_all_values(EXISTING_MEMO_SELECTOR)
         target = _normalize_memo(memo)
         if any(_normalize_memo(m) == target for m in existing_memos if m.strip()):
             return ToolResult(status=ToolStatus.EXISTS, data={"memo": memo})
 
-        driver.select_option(NEW_ROW_DESCRIPTION_SELECTOR, category)
+        # Description has no formcontrolname of its own — every existing
+        # row shows it mirroring Category, so setting Category alone is
+        # enough (confirmed live, see NEW_ROW_CATEGORY_SELECTOR comment).
         driver.select_option(NEW_ROW_CATEGORY_SELECTOR, category)
         driver.fill(NEW_ROW_COST_SELECTOR, f"{cost:.2f}")
         driver.fill(NEW_ROW_DATE_SELECTOR, invoice_date.strftime("%m/%d/%Y"))

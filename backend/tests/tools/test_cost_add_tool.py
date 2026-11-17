@@ -8,7 +8,6 @@ from dealercenter_agent.tools.cost_add_tool import (
     COST_ADDS_LINK_SELECTOR,
     NEW_ROW_COST_SELECTOR,
     NEW_ROW_DATE_SELECTOR,
-    NEW_ROW_DESCRIPTION_SELECTOR,
     NEW_ROW_CATEGORY_SELECTOR,
     NEW_ROW_MEMO_SELECTOR,
     SAVE_BUTTON_SELECTOR,
@@ -29,7 +28,6 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
     assert result.status == ToolStatus.SUCCESS
     assert result.data["category"] == "Repair"
     assert COST_ADDS_LINK_SELECTOR in driver.clicks
-    assert (NEW_ROW_DESCRIPTION_SELECTOR, "Repair") in driver.select_calls
     assert (NEW_ROW_CATEGORY_SELECTOR, "Repair") in driver.select_calls
     assert driver.filled[NEW_ROW_COST_SELECTOR] == "270.00"
     assert driver.filled[NEW_ROW_DATE_SELECTOR] == "11/06/2026"
