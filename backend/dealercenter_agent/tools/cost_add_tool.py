@@ -73,11 +73,15 @@ class CostAddTool(Tool):
     existing dealercenter-cost-adds skill's rule exactly ("Exact
     invoice_number match, ignore spaces... Do not Add New, fill, upload,
     or Save"). Only if nothing matches does it fill the grid's blank
-    new-entry row: Description/Category both set to the given category
-    (pre-classified by ClassifyCategoryTool — this Tool trusts whatever
-    category string it's handed, it doesn't re-derive one), Cost, Date
-    Added, Vendor (search-and-select, never invented), and Memo. Then
-    Save."""
+    new-entry row, after confirming that row's Memo is actually blank
+    (guards against writing into existing data if an assumption about
+    row count/selectors ever breaks).
+
+    Cost, Category, and Memo are required — any failure filling these is
+    a real StepFailure. Vendor is best-effort: search-and-select, never
+    invented, but a no-match or ambiguous result is logged as a warning
+    in the returned data rather than aborting the entry. Description has
+    no control of its own — it mirrors whatever Category is set to."""
 
     name = "CostAddTool"
 
@@ -119,36 +123,64 @@ class CostAddTool(Tool):
             # which becomes this new row once it's appended.
             driver.click(MODAL_OPEN_SELECTOR)
 
-        # Description has no formcontrolname of its own — every existing
-        # row shows it mirroring Category, so setting Category alone is
-        # enough (confirmed live, see NEW_ROW_CATEGORY_SELECTOR comment).
+        # Guard against writing into a row that already has data — relying
+        # on tr:last-child always being the fresh blank row is only as
+        # good as that assumption holding. A real new row's Memo is
+        # always blank; any value there means something upstream (row
+        # count, a stale selector, Add New not actually landing a new
+        # row) didn't go the way we expect, so stop instead of risking a
+        # write into existing data.
+        row_memo = driver.find_all_values(NEW_ROW_MEMO_SELECTOR)
+        if any(v.strip() for v in row_memo):
+            raise StepFailure(
+                self.name,
+                f"expected a blank new row but its Memo already has a value: {row_memo!r}",
+            )
+
+        # Cost, Category, and Memo are the fields this entry must have —
+        # any failure here is a real StepFailure. Description has no
+        # formcontrolname of its own (every existing row shows it
+        # mirroring Category, confirmed live), so setting Category alone
+        # is enough. Vendor is best-effort below: logged and skipped on
+        # failure rather than aborting the whole entry, per instruction.
         driver.select_option(NEW_ROW_CATEGORY_SELECTOR, category)
         driver.fill(NEW_ROW_COST_SELECTOR, f"{cost:.2f}")
         driver.fill(NEW_ROW_DATE_SELECTOR, invoice_date.strftime("%m/%d/%Y"))
 
-        self._select_vendor(driver, vendor_name)
+        vendor_warning = self._select_vendor(driver, vendor_name)
 
         driver.fill(NEW_ROW_MEMO_SELECTOR, memo)
         driver.click(SAVE_BUTTON_SELECTOR)
 
-        return ToolResult(status=ToolStatus.SUCCESS, data={"category": category, "vendor": vendor_name})
+        data = {"category": category, "vendor": vendor_name}
+        if vendor_warning:
+            data["warnings"] = [vendor_warning]
+            print(f"[{self.name}] WARNING: {vendor_warning}")
+        return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
-    def _select_vendor(self, driver: BrowserDriver, vendor_name: str) -> None:
-        # Matches the existing skill's rule: search by the first word of
-        # the vendor name, pick the closest legal name — never invent one.
+    def _select_vendor(self, driver: BrowserDriver, vendor_name: str) -> str | None:
+        """Best-effort: Cost/Category/Memo are the required fields, Vendor
+        is not — on any failure here, log a warning and leave the row's
+        Vendor unset rather than aborting the whole entry. Still never
+        invents a vendor match; it only skips setting one."""
         query = vendor_name.split()[0] if vendor_name else ""
 
-        driver.click(NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR)
-        if not driver.wait_visible(VENDOR_SEARCH_INPUT_SELECTOR, timeout_ms=5000):
-            raise StepFailure(self.name, "vendor search box did not open")
-        driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
+        try:
+            driver.click(NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR)
+            if not driver.wait_visible(VENDOR_SEARCH_INPUT_SELECTOR, timeout_ms=5000):
+                return "vendor search box did not open — Vendor left unset"
+            driver.fill(VENDOR_SEARCH_INPUT_SELECTOR, query)
 
-        results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
-        if not results:
-            raise StepFailure(self.name, f"no vendor match for {vendor_name!r} — not inventing one")
-        if len(results) > 1:
-            raise StepFailure(
-                self.name, f"ambiguous vendor match: {len(results)} results for {vendor_name!r}"
-            )
+            results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
+            if not results:
+                return f"no vendor match for {vendor_name!r} — Vendor left unset"
+            if len(results) > 1:
+                return (
+                    f"ambiguous vendor match: {len(results)} results for "
+                    f"{vendor_name!r} — Vendor left unset"
+                )
 
-        driver.click(VENDOR_RESULT_ROW_SELECTOR)
+            driver.click(VENDOR_RESULT_ROW_SELECTOR)
+            return None
+        except Exception as exc:
+            return f"vendor selection failed ({exc}) — Vendor left unset"

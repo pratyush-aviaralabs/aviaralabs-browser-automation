@@ -76,30 +76,59 @@ def test_cost_add_rejects_unknown_category(fake_driver_cost_add_vendor_found):
     assert "unknown category" in exc.value.reason
 
 
-def test_cost_add_fails_without_inventing_a_vendor(fake_driver_cost_add_no_vendor_match):
-    with pytest.raises(StepFailure) as exc:
-        CostAddTool().run(
-            fake_driver_cost_add_no_vendor_match,
-            category="Repair",
-            cost=Decimal("10"),
-            invoice_date=date(2026, 1, 1),
-            vendor_name="TotallyUnknownVendorXYZ",
-            memo="X",
-        )
-    assert "no vendor match" in exc.value.reason
+def test_cost_add_skips_vendor_without_inventing_one_on_no_match(fake_driver_cost_add_no_vendor_match):
+    # Vendor is best-effort, not required — Cost/Category/Memo still get
+    # filled and saved; a missing vendor match is logged, never invented,
+    # and must not abort the whole entry.
+    driver = fake_driver_cost_add_no_vendor_match
+    result = CostAddTool().run(
+        driver,
+        category="Repair",
+        cost=Decimal("10"),
+        invoice_date=date(2026, 1, 1),
+        vendor_name="TotallyUnknownVendorXYZ",
+        memo="X",
+    )
+    assert result.status == ToolStatus.SUCCESS
+    assert "no vendor match" in result.data["warnings"][0]
+    assert driver.filled[NEW_ROW_MEMO_SELECTOR] == "X"
+    assert SAVE_BUTTON_SELECTOR in driver.clicks
 
 
-def test_cost_add_fails_on_ambiguous_vendor(fake_driver_cost_add_ambiguous_vendor):
+def test_cost_add_skips_vendor_on_ambiguous_match(fake_driver_cost_add_ambiguous_vendor):
+    driver = fake_driver_cost_add_ambiguous_vendor
+    result = CostAddTool().run(
+        driver,
+        category="Repair",
+        cost=Decimal("10"),
+        invoice_date=date(2026, 1, 1),
+        vendor_name="Jensen",
+        memo="X",
+    )
+    assert result.status == ToolStatus.SUCCESS
+    assert "ambiguous vendor" in result.data["warnings"][0]
+    assert SAVE_BUTTON_SELECTOR in driver.clicks
+
+
+def test_cost_add_fails_when_target_row_already_has_a_memo(fake_driver_cost_add_vendor_found):
+    """The blank-row guard: if the row CostAddTool is about to fill
+    already has a Memo value, something upstream (row count, a stale
+    selector) didn't go as expected — must stop rather than risk writing
+    into existing data."""
+    driver = fake_driver_cost_add_vendor_found
+    from dealercenter_agent.tools.cost_add_tool import NEW_ROW_MEMO_SELECTOR as ROW_MEMO
+
+    driver.find_all_values_results[ROW_MEMO] = ["103355"]
     with pytest.raises(StepFailure) as exc:
         CostAddTool().run(
-            fake_driver_cost_add_ambiguous_vendor,
+            driver,
             category="Repair",
             cost=Decimal("10"),
             invoice_date=date(2026, 1, 1),
             vendor_name="Jensen",
             memo="X",
         )
-    assert "ambiguous vendor" in exc.value.reason
+    assert "expected a blank new row" in exc.value.reason
 
 
 def test_cost_add_returns_exists_without_any_writes_when_memo_already_present(
