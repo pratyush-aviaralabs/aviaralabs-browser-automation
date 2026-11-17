@@ -75,13 +75,25 @@ NEW_ROW_VENDOR_LINK_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-co
 # (2026-11-18), see selectors below.
 #
 # [role='dialog'] alone is ambiguous — confirmed live (2026-11-18): the
-# Cost Adds dialog itself ALSO has role="dialog", and .first on a
-# page-wide [role='dialog'] locator matched the outer Cost Adds dialog,
-# not the nested vendor popup (whose search input then never got
-# filled). Nested/popup dialogs are appended after their parent in
-# document order, so the LAST [role='dialog'] on the page is the
-# topmost one — scope every vendor-dialog selector off that instead.
-VENDOR_DIALOG_XPATH = "xpath=(//div[@role='dialog'])[last()]"
+# Cost Adds dialog itself ALSO has role="dialog".
+#
+# "(//div[@role='dialog'])[last()]" (picking by document position) is
+# ALSO wrong — confirmed live (2026-11-18): this only means "the vendor
+# dialog" while it's actually open. Once it closes, "the last
+# [role='dialog']" silently becomes the outer Cost Adds dialog itself —
+# which also contains plenty of input.k-input-inner elements (every
+# row's own Cost/Category inputs), so wait_visible(VENDOR_SEARCH_INPUT_
+# SELECTOR) kept reporting "still open" even after the vendor dialog
+# had genuinely closed. That false positive then made
+# _close_vendor_dialog() click the OUTER Cost Adds dialog's own Close
+# button instead — explaining why Save hung on every single run,
+# success or failure alike. Scope by the dialog's TITLE TEXT instead,
+# which stays correct (or correctly absent) regardless of what else is
+# stacked or whether the vendor dialog is currently open at all.
+VENDOR_DIALOG_XPATH = (
+    "xpath=//div[@role='dialog']"
+    "[.//*[contains(@class,'k-dialog-title') and normalize-space(text())='Search or Add Vendor']]"
+)
 # Confirmed live (2026-11-18): the input has NO type attribute at all
 # (not type='text') — it's a bare <input class="k-input-inner"> inside
 # a <kendo-textbox>, same input-inner pattern as every other Kendo
