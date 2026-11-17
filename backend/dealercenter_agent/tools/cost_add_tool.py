@@ -130,24 +130,39 @@ VENDOR_DIALOG_CLOSE_SELECTOR = VENDOR_DIALOG_XPATH + "//button[@title='Close']"
 VENDOR_DIALOG_OVERLAY_SELECTOR = (
     "xpath=(" + VENDOR_DIALOG_XPATH[len("xpath="):] + ")/preceding-sibling::div[contains(@class,'k-overlay')]"
 )
-# The Cost Adds dialog's OWN backdrop — same preceding-sibling pattern
-# as the vendor dialog's, scoped by its OWN direct titlebar child
-# (title "Cost Adds") the same way VENDOR_DIALOG_XPATH is. Confirmed
-# live (2026-11-18): a genuine human click on Save always persists
-# (toast: "Inventory Successfully Saved") immediately after filling
-# fields by hand; automation's near-instant fill+click often didn't,
-# with Playwright reporting this exact backdrop as intercepting the
-# click for the full 30s wait every time. A human's natural pause
-# between filling the last field and clicking Save is apparently long
-# enough for this to settle; explicitly waiting for it to clear before
-# clicking (rather than assuming it's permanently there) is the fix.
+# The Cost Adds dialog's own container, scoped by its OWN direct
+# titlebar child (title "Cost Adds") the same way VENDOR_DIALOG_XPATH
+# is scoped. An earlier approach tried clicking the in-dialog Save
+# button directly and waiting for this dialog's own backdrop overlay
+# to clear first — abandoned (2026-11-18) once console confirmed the
+# ONLY ".save-btn" on the page is the PAGE's own top-toolbar Save, not
+# the dialog's, and a genuine human click on Save always persisted
+# (toast: "Inventory Successfully Saved") while no automated click on
+# it ever did. See SAVE_CONFIRMATION_YES_SELECTOR for the real path.
 COST_ADDS_DIALOG_XPATH = (
     "xpath=//div[@role='dialog']"
     "[kendo-dialog-titlebar/span[contains(@class,'k-dialog-title') and normalize-space(text())='Cost Adds']]"
 )
-COST_ADDS_OVERLAY_SELECTOR = (
-    "xpath=(" + COST_ADDS_DIALOG_XPATH[len("xpath="):] + ")/preceding-sibling::div[contains(@class,'k-overlay')]"
+# Scoped Close (X) button for the Cost Adds dialog specifically —
+# NOT the generic "button[title='Close']" VerifyCostAddTool uses
+# (that one is only safe there because no other dialog is expected to
+# be open at verification time).
+COST_ADDS_CLOSE_SELECTOR = COST_ADDS_DIALOG_XPATH + "//button[@title='Close']"
+# Confirmed live (2026-11-18), per user: closing the Cost Adds dialog
+# with unsaved changes pops this confirmation — a FRESH top-level
+# dialog, not fighting the Cost Adds dialog's own backdrop the way the
+# in-dialog Save button was. Clicking "Yes" here is the reliable save
+# path; clicking the in-dialog Save button directly is what's been
+# intermittently/silently failing this whole time. Title text sits in
+# a nested <div> inside the titlebar span, not directly on the span —
+# same direct-titlebar-child scoping as COST_ADDS_DIALOG_XPATH/
+# VENDOR_DIALOG_XPATH, just one level deeper.
+SAVE_CONFIRMATION_DIALOG_XPATH = (
+    "xpath=//div[@role='dialog']"
+    "[kendo-dialog-titlebar/span[contains(@class,'k-dialog-title')]"
+    "//div[normalize-space(text())='Save Confirmation']]"
 )
+SAVE_CONFIRMATION_YES_SELECTOR = SAVE_CONFIRMATION_DIALOG_XPATH + " >> button:has-text('Yes')"
 NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
@@ -156,6 +171,11 @@ NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # lives in the `value` property, not as visible text — find_all_text's
 # inner-text read returns "" here regardless of selector.
 EXISTING_MEMO_SELECTOR = "input[formcontrolname='memo']"
+# No longer used to click Save directly (see SAVE_CONFIRMATION_YES_
+# SELECTOR) — kept only because its ambiguity (matches the PAGE's own
+# top-toolbar Save button, not the dialog's, confirmed live 2026-11-18
+# via console: only one ".save-btn" exists and it's "not inside a
+# dialog") is itself the reason this approach was abandoned.
 SAVE_BUTTON_SELECTOR = "button.save-btn"
 
 MAX_ADD_NEW_ATTEMPTS = 3
@@ -339,16 +359,21 @@ class CostAddTool(Tool):
             data["auto_save"] = False
             return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
-        # Confirmed live (2026-11-18): a human filling the same fields
-        # by hand and clicking Save a moment later always persists
-        # correctly (visible "Inventory Successfully Saved" toast);
-        # automation's near-instant fill+click never showed that toast
-        # in any run. Wait for the Cost Adds dialog's own backdrop to
-        # actually clear — not a flat sleep, and not assumed permanent —
-        # before clicking Save for real.
+        # Confirmed live (2026-11-18), per user: clicking the in-dialog
+        # Save button directly was never reliable (console check: the
+        # ONLY ".save-btn" on the page is "not inside a dialog" — it's
+        # the PAGE's own top-toolbar Save, not the Cost Adds dialog's).
+        # Closing the dialog instead pops a fresh "Save Confirmation"
+        # dialog ("You have unsaved changes. Do you want to save it
+        # first before closing the dialog?"); clicking "Yes" there is
+        # the reliable save path, not fighting any backdrop overlay.
         time.sleep(SAVE_SETTLE_DELAY_SECONDS)
-        driver.wait_hidden(COST_ADDS_OVERLAY_SELECTOR, timeout_ms=20000)
-        driver.force_click(SAVE_BUTTON_SELECTOR)
+        driver.click(COST_ADDS_CLOSE_SELECTOR)
+        if not driver.wait_visible(SAVE_CONFIRMATION_YES_SELECTOR, timeout_ms=5000):
+            raise StepFailure(
+                self.name, "closing the Cost Adds dialog did not raise the Save Confirmation prompt"
+            )
+        driver.click(SAVE_CONFIRMATION_YES_SELECTOR)
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
     def _click_add_new_and_verify(self, driver: BrowserDriver) -> None:

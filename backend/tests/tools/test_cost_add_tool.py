@@ -5,13 +5,14 @@ import pytest
 
 from dealercenter_agent.tools.base import StepFailure, ToolStatus
 from dealercenter_agent.tools.cost_add_tool import (
+    COST_ADDS_CLOSE_SELECTOR,
     COST_ADDS_LINK_SELECTOR,
     MODAL_OPEN_SELECTOR,
     NEW_ROW_COST_SELECTOR,
     NEW_ROW_DATE_SELECTOR,
     NEW_ROW_CATEGORY_SELECTOR,
     NEW_ROW_MEMO_SELECTOR,
-    SAVE_BUTTON_SELECTOR,
+    SAVE_CONFIRMATION_YES_SELECTOR,
     CostAddTool,
 )
 
@@ -34,7 +35,8 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
     assert driver.filled[NEW_ROW_COST_SELECTOR] == "270.00"
     assert driver.typed[NEW_ROW_DATE_SELECTOR] == "11/06/2026"
     assert driver.typed[NEW_ROW_MEMO_SELECTOR] == "276289"
-    assert SAVE_BUTTON_SELECTOR in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
+    assert SAVE_CONFIRMATION_YES_SELECTOR in driver.clicks
 
 
 def test_cost_add_auto_save_false_fills_everything_but_does_not_click_save(
@@ -54,7 +56,7 @@ def test_cost_add_auto_save_false_fills_everything_but_does_not_click_save(
     assert result.data["auto_save"] is False
     assert (NEW_ROW_CATEGORY_SELECTOR, "Repair") in driver.select_calls
     assert driver.typed[NEW_ROW_MEMO_SELECTOR] == "276289"
-    assert SAVE_BUTTON_SELECTOR not in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR not in driver.clicks
 
 
 def test_cost_add_fills_other_row(fake_driver_cost_add_vendor_found):
@@ -121,7 +123,8 @@ def test_cost_add_skips_vendor_without_inventing_one_on_no_match(fake_driver_cos
     assert result.status == ToolStatus.SUCCESS
     assert "no result matched" in result.data["warnings"][0]
     assert driver.typed[NEW_ROW_MEMO_SELECTOR] == "X"
-    assert SAVE_BUTTON_SELECTOR in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
+    assert SAVE_CONFIRMATION_YES_SELECTOR in driver.clicks
 
 
 def test_cost_add_skips_vendor_when_no_candidate_is_an_exact_match(fake_driver_cost_add_ambiguous_vendor):
@@ -140,7 +143,8 @@ def test_cost_add_skips_vendor_when_no_candidate_is_an_exact_match(fake_driver_c
     assert result.status == ToolStatus.SUCCESS
     assert "no result matched" in result.data["warnings"][0]
     assert "2 candidates" in result.data["warnings"][0]
-    assert SAVE_BUTTON_SELECTOR in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
+    assert SAVE_CONFIRMATION_YES_SELECTOR in driver.clicks
 
 
 def test_cost_add_fails_when_target_row_already_has_a_memo(fake_driver_cost_add_vendor_found):
@@ -181,7 +185,7 @@ def test_cost_add_returns_exists_without_any_writes_when_memo_already_present(
     # Must not add a row, upload, or save — matches the existing skill's rule exactly.
     assert driver.select_calls == []
     assert NEW_ROW_COST_SELECTOR not in driver.filled
-    assert SAVE_BUTTON_SELECTOR not in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR not in driver.clicks
 
 
 def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_duplicate_memo):
@@ -218,7 +222,8 @@ def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_du
         skip_duplicate_check=True,
     )
     assert result.status == ToolStatus.SUCCESS
-    assert SAVE_BUTTON_SELECTOR in driver.clicks
+    assert COST_ADDS_CLOSE_SELECTOR in driver.clicks
+    assert SAVE_CONFIRMATION_YES_SELECTOR in driver.clicks
     # Must click Add New first to get a definitely-fresh row, not trust
     # whatever the default last row already held.
     assert driver.clicks.count(MODAL_OPEN_SELECTOR) == 1
