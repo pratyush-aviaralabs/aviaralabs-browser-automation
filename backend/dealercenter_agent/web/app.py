@@ -5,6 +5,7 @@ actual browser (via CDP screencast, not a literal embedded window).
 Run with: uvicorn dealercenter_agent.web.app:app --reload
 """
 import asyncio
+import queue
 import threading
 import uuid
 from pathlib import Path
@@ -13,7 +14,7 @@ from fastapi import FastAPI, File, Form, UploadFile, WebSocket, WebSocketDisconn
 from fastapi.responses import FileResponse
 
 from ..config import StorageConfig
-from .runner import MfaWaiter, run_pipeline
+from .runner import MfaWaiter, run_inspector_session, run_pipeline
 
 app = FastAPI()
 
@@ -24,6 +25,10 @@ class RunState:
     def __init__(self):
         self.clients: list[WebSocket] = []
         self.mfa_waiter: MfaWaiter | None = None
+        # Only set for Inspector sessions — a pipeline run's WS handler
+        # ignores click/type messages because these stay None for it.
+        self.commands: "queue.Queue[dict] | None" = None
+        self.stop_event: threading.Event | None = None
 
 
 RUNS: dict[str, RunState] = {}
@@ -95,6 +100,23 @@ async def start_run(
     return {"run_id": run_id}
 
 
+@app.post("/inspect/start")
+async def start_inspector():
+    run_id = uuid.uuid4().hex
+    state = RunState()
+    state.commands = queue.Queue()
+    state.stop_event = threading.Event()
+    RUNS[run_id] = state
+
+    thread = threading.Thread(
+        target=run_inspector_session,
+        args=(lambda payload: _broadcast(run_id, payload), state.commands, state.stop_event),
+        daemon=True,
+    )
+    thread.start()
+    return {"run_id": run_id}
+
+
 @app.websocket("/ws/{run_id}")
 async def ws_endpoint(websocket: WebSocket, run_id: str):
     await websocket.accept()
@@ -108,5 +130,11 @@ async def ws_endpoint(websocket: WebSocket, run_id: str):
             msg = await websocket.receive_json()
             if msg.get("type") == "mfa_code" and state.mfa_waiter:
                 state.mfa_waiter.submit_code(msg.get("code", ""))
+            elif msg.get("type") in ("click", "type") and state.commands is not None:
+                state.commands.put(msg)
     except WebSocketDisconnect:
         state.clients.remove(websocket)
+        if state.stop_event is not None and not state.clients:
+            # Inspector session's only viewer left — stop driving a
+            # browser nobody can see or click anymore.
+            state.stop_event.set()

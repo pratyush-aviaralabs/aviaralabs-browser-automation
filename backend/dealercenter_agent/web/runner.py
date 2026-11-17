@@ -6,6 +6,7 @@ is that nothing needs a visible window on the server anymore."""
 
 import json
 import os
+import queue
 import threading
 import time
 from pathlib import Path
@@ -166,3 +167,52 @@ def run_pipeline(
             _log(emit, "VerifyFileUploadTool", verify_result.status, reason=verify_result.reason)
 
         emit({"type": "done"})
+
+
+def run_inspector_session(
+    emit: EventSink, commands: "queue.Queue[dict]", stop_event: threading.Event
+) -> None:
+    """Live, click-to-interact AND click-to-inspect session — separate
+    from run_pipeline on purpose. Playwright's sync API is single-
+    threaded/blocking; interleaving live human clicks with an
+    in-progress automated tool step would need the async API instead
+    (a real refactor, not done here). This avoids that entirely: nothing
+    else drives the page while a session like this is open, so a plain
+    loop draining a thread-safe queue is enough.
+
+    Every click both actually clicks (via CDP Input.dispatchMouseEvent —
+    this is real interaction, not a preview) AND reports back the
+    clicked element's outerHTML, which is the whole point: it replaces
+    the manual 'paste this into your browser console' round-trip we were
+    doing by hand to find each tool's real selectors."""
+    with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
+        cdp = _start_screencast(driver.page, emit)
+        cdp.send("DOM.enable", {})
+        driver.goto("https://app.dealercenter.net")
+
+        while not stop_event.is_set():
+            try:
+                cmd = commands.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+            try:
+                if cmd["type"] == "click":
+                    x, y = cmd["x"], cmd["y"]
+                    cdp.send(
+                        "Input.dispatchMouseEvent",
+                        {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1},
+                    )
+                    cdp.send(
+                        "Input.dispatchMouseEvent",
+                        {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1},
+                    )
+                    node = cdp.send("DOM.getNodeForLocation", {"x": x, "y": y})
+                    html = cdp.send("DOM.getOuterHTML", {"backendNodeId": node["backendNodeId"]})
+                    emit({"type": "inspect", "outer_html": html["outerHTML"]})
+                elif cmd["type"] == "type":
+                    cdp.send("Input.insertText", {"text": cmd["text"]})
+            except Exception as exc:
+                emit({"type": "inspect_error", "message": str(exc)})
+
+        _save_state(driver.save_session())

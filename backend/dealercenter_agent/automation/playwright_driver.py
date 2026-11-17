@@ -125,12 +125,17 @@ def create_playwright_driver(
         with create_playwright_driver(headless=True, storage_state=saved) as driver:
             ... use driver ...
     """
+    # Fixed to match the web UI's screencast maxWidth/maxHeight (see
+    # web/runner.py) — the Inspector maps a click's pixel position on the
+    # JPEG frame directly onto real page coordinates, which only lines up
+    # if the frame size and the actual viewport size are the same.
+    viewport = {"width": 1280, "height": 800}
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=headless)
         context = (
-            browser.new_context(storage_state=storage_state)
+            browser.new_context(storage_state=storage_state, viewport=viewport)
             if storage_state
-            else browser.new_context()
+            else browser.new_context(viewport=viewport)
         )
         page = context.new_page()
         try:
