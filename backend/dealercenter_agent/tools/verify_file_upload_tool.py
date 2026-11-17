@@ -1,6 +1,6 @@
 from ..automation.base import BrowserDriver
 from .base import Tool, ToolResult, ToolStatus
-from .file_upload_tool import EXISTING_FILE_NAME_SELECTOR
+from .file_upload_tool import EXISTING_FILE_NAME_SELECTOR, all_file_names
 
 
 class VerifyFileUploadTool(Tool):
@@ -20,11 +20,15 @@ class VerifyFileUploadTool(Tool):
         # read, not a poll. The grid can still be re-sorting/re-rendering
         # the just-uploaded row in when this runs immediately after
         # FileUploadTool's own (polling) check already saw it — so wait
-        # for the real selector to appear before reading, not just
-        # whatever generic text FileUploadTool happened to catch first.
+        # for the real selector to appear on the current page before
+        # reading, not just whatever generic text FileUploadTool happened
+        # to catch first. This alone doesn't cover pagination (a new
+        # upload could in principle land on a page other than the one
+        # showing), so the fallback below walks every page the same way
+        # FileUploadTool's duplicate-check does.
         driver.wait_visible(f"{EXISTING_FILE_NAME_SELECTOR}:has-text('{file_name}')", timeout_ms=10000)
 
-        existing_names = driver.find_all_text(EXISTING_FILE_NAME_SELECTOR)
+        existing_names = all_file_names(driver)
         if any(file_name in name for name in existing_names):
             return ToolResult(status=ToolStatus.SUCCESS, data={"file_name": file_name})
         return ToolResult(status=ToolStatus.FAILED, reason="PDF not listed on Files")

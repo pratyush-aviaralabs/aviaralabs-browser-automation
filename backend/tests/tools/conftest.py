@@ -14,7 +14,7 @@ from dealercenter_agent.tools.search_invoice_tool import (
     SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
 from dealercenter_agent.tools.cost_add_tool import EXISTING_MEMO_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
-from dealercenter_agent.tools.file_upload_tool import EXISTING_FILE_NAME_SELECTOR
+from dealercenter_agent.tools.file_upload_tool import EXISTING_FILE_NAME_SELECTOR, NEXT_PAGE_BUTTON_SELECTOR
 
 from ..fakes import FakeBrowserDriver
 
@@ -241,6 +241,38 @@ def fake_driver_duplicate_file() -> FakeBrowserDriver:
 def fake_driver_files_tab_never_loads() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.on_wait_visible = lambda sel, t: False
+    return driver
+
+
+@pytest.fixture
+def fake_driver_duplicate_on_page_two() -> FakeBrowserDriver:
+    """Reproduces exactly the live bug: page 1 has no match at all;
+    the duplicate-named file only exists on page 2. A single-page read
+    would wrongly report 'not a duplicate' and re-upload — this is what
+    actually happened 3 times before pagination-walking was added."""
+    driver = FakeBrowserDriver()
+    pages = [["Monson 00294", "O'Reilly 103355"], ["Jensen 110011300", "O'Reilly 104253"]]
+    state = {"page": 0}
+
+    def on_find_all_text(selector: str) -> list[str]:
+        if selector == EXISTING_FILE_NAME_SELECTOR:
+            return pages[state["page"]]
+        return []
+
+    def on_click(selector: str) -> None:
+        if selector == NEXT_PAGE_BUTTON_SELECTOR and state["page"] < len(pages) - 1:
+            state["page"] += 1
+
+    def on_wait_visible(selector: str, _timeout_ms: int) -> bool:
+        if selector == EXISTING_FILE_NAME_SELECTOR:
+            return True
+        if selector == NEXT_PAGE_BUTTON_SELECTOR:
+            return state["page"] < len(pages) - 1  # no next-page control on the last page
+        return False
+
+    driver.on_find_all_text = on_find_all_text
+    driver.on_click = on_click
+    driver.on_wait_visible = on_wait_visible
     return driver
 
 

@@ -69,6 +69,19 @@ def test_upload_skips_when_invoice_number_already_in_a_file_name(
     assert driver.uploaded_files == []
 
 
+def test_upload_finds_duplicate_sitting_only_on_page_two(fake_driver_duplicate_on_page_two, small_pdf):
+    # Reproduces the actual live bug: page 1 alone has no match; the
+    # duplicate only exists on page 2. Must walk pages, not just read page 1.
+    driver = fake_driver_duplicate_on_page_two
+    result = FileUploadTool().run(
+        driver,
+        local_pdf_path=str(small_pdf),
+        invoice_number="110011300",
+    )
+    assert result.status == ToolStatus.EXISTS
+    assert driver.uploaded_files == []
+
+
 def test_upload_fails_when_files_tab_does_not_load(fake_driver_files_tab_never_loads, small_pdf):
     with pytest.raises(StepFailure) as exc:
         FileUploadTool().run(
