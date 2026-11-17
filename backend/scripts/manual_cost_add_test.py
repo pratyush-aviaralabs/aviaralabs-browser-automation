@@ -32,6 +32,7 @@ from dealercenter_agent.tools.base import StepFailure
 from dealercenter_agent.tools.cost_add_tool import CostAddTool
 from dealercenter_agent.tools.login_tool import LoginTool
 from dealercenter_agent.tools.search_invoice_tool import SearchInvoiceTool
+from dealercenter_agent.tools.verify_cost_add_tool import VerifyCostAddTool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATE_FILE = PROJECT_ROOT / ".auth_state.json"
@@ -96,6 +97,17 @@ def main():
                     skip_duplicate_check=skip_duplicate_check,
                 )
                 print(f"[cost_add] {cost_add_result.status} data={cost_add_result.data}")
+
+                # Don't trust CostAddTool's own SUCCESS — confirmed live
+                # (2026-11-18) that a reported SUCCESS save can still
+                # silently drop a field. Only meaningful after an actual
+                # write; EXISTS means nothing new was saved to check.
+                if cost_add_result.status.name == "SUCCESS":
+                    verify_result = VerifyCostAddTool().run(
+                        driver, memo=invoice_number, expected_cost=cost
+                    )
+                    print(f"[verify_cost_add] {verify_result.status} "
+                          f"{verify_result.data if verify_result.data else verify_result.reason}")
         except StepFailure as exc:
             print(f"[FAILED] {exc.tool_name}: {exc.reason}")
         except Exception as exc:
