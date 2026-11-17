@@ -46,6 +46,11 @@ class FakeBrowserDriver(BrowserDriver):
         if self.on_click:
             self.on_click(selector)
 
+    def force_click(self, selector: str) -> None:
+        self.clicks.append(selector)
+        if self.on_click:
+            self.on_click(selector)
+
     def click_submit_near(self, field_selector: str) -> None:
         self.submit_clicks.append(field_selector)
         if self.on_click_submit_near:

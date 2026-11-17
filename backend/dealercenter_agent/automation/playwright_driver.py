@@ -48,6 +48,9 @@ class PlaywrightDriver(BrowserDriver):
     def click(self, selector: str) -> None:
         self.page.locator(selector).first.click()
 
+    def force_click(self, selector: str) -> None:
+        self.page.locator(selector).first.click(force=True)
+
     def click_submit_near(self, field_selector: str) -> None:
         field = self.page.locator(field_selector).first
         btn = field.locator(

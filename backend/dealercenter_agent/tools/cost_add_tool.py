@@ -297,7 +297,13 @@ class CostAddTool(Tool):
         vendor_warning = self._select_vendor(driver, vendor_name)
 
         driver.fill(NEW_ROW_MEMO_SELECTOR, memo)
-        driver.click(SAVE_BUTTON_SELECTOR)
+        # force_click, not click — confirmed live (2026-11-18) that the
+        # Cost Adds dialog's own backdrop (permanently present the whole
+        # time the dialog is open, not a transient state) registers as
+        # intercepting clicks on this button, hanging a plain click()
+        # for 30s even with the button reported visible/enabled/stable
+        # throughout. See BrowserDriver.force_click.
+        driver.force_click(SAVE_BUTTON_SELECTOR)
 
         data = {"category": category, "vendor": vendor_name}
         if vendor_warning:

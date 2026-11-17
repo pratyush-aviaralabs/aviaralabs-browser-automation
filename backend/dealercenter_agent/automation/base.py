@@ -30,6 +30,20 @@ class BrowserDriver(ABC):
     def click(self, selector: str) -> None: ...
 
     @abstractmethod
+    def force_click(self, selector: str) -> None:
+        """Click without Playwright's pointer-interception check — only
+        for a target already confirmed visible/enabled/stable, where
+        something else merely overlaps it visually without being a real
+        blocker. Confirmed live (2026-11-18): the Cost Adds dialog's own
+        backdrop overlay (which is SUPPOSED to stay present the entire
+        time that dialog is open — it's the permanent background dimmer,
+        not a transient state to wait out) registered as intercepting
+        clicks on the dialog's own Save button, hanging a plain click()
+        for 30s even though the button itself was reported
+        visible/enabled/stable throughout."""
+        ...
+
+    @abstractmethod
     def click_submit_near(self, field_selector: str) -> None:
         """Click the real submit button in the same <form> as the given
         field — not just any button matching a text/type selector. See
