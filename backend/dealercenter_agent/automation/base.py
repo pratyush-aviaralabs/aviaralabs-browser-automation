@@ -31,16 +31,21 @@ class BrowserDriver(ABC):
 
     @abstractmethod
     def force_click(self, selector: str) -> None:
-        """Click without Playwright's pointer-interception check — only
-        for a target already confirmed visible/enabled/stable, where
-        something else merely overlaps it visually without being a real
-        blocker. Confirmed live (2026-11-18): the Cost Adds dialog's own
-        backdrop overlay (which is SUPPOSED to stay present the entire
-        time that dialog is open — it's the permanent background dimmer,
-        not a transient state to wait out) registered as intercepting
-        clicks on the dialog's own Save button, hanging a plain click()
-        for 30s even though the button itself was reported
-        visible/enabled/stable throughout."""
+        """Invoke the target element's own .click() DOM method directly
+        — bypasses coordinate-based hit testing entirely, firing the
+        element's click handlers regardless of what's visually on top of
+        it. Only for a target already confirmed visible/enabled/stable,
+        where something else merely overlaps it visually without being a
+        real blocker. Confirmed live (2026-11-18): the Cost Adds
+        dialog's own backdrop overlay (SUPPOSED to stay present the
+        entire time that dialog is open — the permanent background
+        dimmer, not a transient state to wait out) sat on top of the
+        Save button at its exact on-screen coordinates. A plain click()
+        hung 30s on it; Playwright's click(force=True) skipped that
+        wait but still dispatched a real coordinate-based mouse click
+        that the overlay absorbed instead — no error, but nothing got
+        saved. Only calling .click() as a DOM method (no coordinates
+        involved at all) actually fired the button's handler."""
         ...
 
     @abstractmethod

@@ -49,7 +49,16 @@ class PlaywrightDriver(BrowserDriver):
         self.page.locator(selector).first.click()
 
     def force_click(self, selector: str) -> None:
-        self.page.locator(selector).first.click(force=True)
+        # evaluate(el => el.click()), NOT .click(force=True) — confirmed
+        # live (2026-11-18) that force=True still dispatches a real
+        # mouse click at the element's on-screen coordinates (it only
+        # skips Playwright's own pre-click actionability check), so a
+        # visually-overlapping element still absorbed the click: no
+        # error was raised, but the Save button's own handler never
+        # fired and nothing was actually persisted. Calling the DOM
+        # element's own .click() method bypasses coordinate-based hit
+        # testing entirely and fires its handlers directly.
+        self.page.locator(selector).first.evaluate("el => el.click()")
 
     def click_submit_near(self, field_selector: str) -> None:
         field = self.page.locator(field_selector).first
