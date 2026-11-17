@@ -58,6 +58,9 @@ def main():
         # Re-save the session so next manual run can reuse it too.
         STATE_FILE.write_text(json.dumps(driver.save_session()))
 
+        # Catches everything, not just StepFailure — a raw Playwright
+        # error here must not close the browser before you get a chance
+        # to look at whatever page/modal it stopped on.
         try:
             search_result = (
                 SearchInvoiceTool().run(driver, vin=None, stock_number=query)
@@ -73,6 +76,8 @@ def main():
                   driver.find_all_text(SEARCH_RESULT_ROW_SELECTOR))
             print("\nFull search box container text, for manually spotting the real selector:")
             print(driver.get_text("body"))
+        except Exception as exc:
+            print(f"[UNEXPECTED ERROR] {exc}")
 
         input("\nPress Enter to close the browser... ")
 
