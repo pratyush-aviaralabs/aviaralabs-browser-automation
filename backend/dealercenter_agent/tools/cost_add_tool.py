@@ -141,6 +141,8 @@ EXISTING_MEMO_SELECTOR = "input[formcontrolname='memo']"
 SAVE_BUTTON_SELECTOR = "button.save-btn"
 
 MAX_ADD_NEW_ATTEMPTS = 3
+# Module-level, not a default arg, so tests can monkeypatch it to 0.
+SAVE_SETTLE_DELAY_SECONDS = 1.5
 
 
 def _normalize_memo(text: str) -> str:
@@ -303,6 +305,15 @@ class CostAddTool(Tool):
         # search box — direct value assignment doesn't reach the
         # underlying reactive form control the way real keystrokes do.
         driver.type_text(NEW_ROW_MEMO_SELECTOR, memo)
+
+        # Confirmed live (2026-11-18): a human filling the same fields
+        # by hand and clicking Save a moment later always persists
+        # correctly; automation filling everything near-instantly and
+        # clicking Save immediately after intermittently didn't. A
+        # short pause here approximates that natural timing gap — cheap
+        # insurance alongside the manual script's retry-the-whole-write
+        # fallback, not a replacement for it.
+        time.sleep(SAVE_SETTLE_DELAY_SECONDS)
         # force_click, not click — confirmed live (2026-11-18) that the
         # Cost Adds dialog's own backdrop (permanently present the whole
         # time the dialog is open, not a transient state) registers as

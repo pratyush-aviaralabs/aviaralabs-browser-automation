@@ -26,6 +26,17 @@ from dealercenter_agent.tools.file_upload_tool import (
 
 from ..fakes import FakeBrowserDriver
 
+
+@pytest.fixture(autouse=True)
+def _no_real_sleep_before_save(monkeypatch):
+    """CostAddTool.run() sleeps SAVE_SETTLE_DELAY_SECONDS before Save —
+    zero it out for every test in this package so the suite doesn't pay
+    that real-world timing cushion on every success-path test."""
+    import dealercenter_agent.tools.cost_add_tool as cost_add_tool_module
+
+    monkeypatch.setattr(cost_add_tool_module, "SAVE_SETTLE_DELAY_SECONDS", 0)
+
+
 LOGIN_URL = f"https://{AUTH_HOST}/u/login"
 MFA_URL = f"https://{AUTH_HOST}/u/mfa-email-challenge"
 DASHBOARD_URL = f"{BASE_URL}/apps/shell/reports/home"
