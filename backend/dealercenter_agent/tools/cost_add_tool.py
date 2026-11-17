@@ -44,11 +44,24 @@ MODAL_OPEN_SELECTOR = "button:has-text('Add New')"
 # returned EVERY row's value (15 for 15 rows), not just the new one.
 # Each <tr> is apparently rendered inside its own Angular host wrapper,
 # so every row independently satisfies :last-child (each is the sole
-# child of its own wrapper). An XPath "(//tr)[last()]" picks the single
-# structurally-last <tr> in document order regardless of wrapping, which
-# is what every NEW_ROW_* selector below actually needs.
-LAST_ROW_XPATH = "xpath=(//tr)[last()]"
-ROW_SELECTOR = "xpath=//tr"
+# child of its own wrapper).
+#
+# A plain "(//tr)[last()]" (the true last <tr> in document order) is
+# ALSO wrong — confirmed live (2026-11-18): the click on a selector
+# built from it timed out entirely (locator never resolved), meaning it
+# picked some unrelated <tr> elsewhere on the page. Angular/Kendo
+# dialogs are commonly appended at the very end of <body>'s DOM order,
+# so background page content can legitimately contain <tr> elements
+# that sort AFTER this modal's own rows.
+#
+# formcontrolname="memo" is specific to Cost Adds rows (not expected to
+# exist anywhere else on the page), so anchor off the last one of those
+# instead and walk up to its row — unambiguous regardless of document
+# order elsewhere.
+LAST_ROW_XPATH = "xpath=(//input[@formcontrolname='memo'])[last()]/ancestor::tr[1]"
+# Used only for the Add-New-worked row-count check — count memo inputs,
+# not every <tr> on the page, for the same reason as above.
+ROW_SELECTOR = "xpath=//input[@formcontrolname='memo']"
 NEW_ROW_CATEGORY_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'category-col')]//button[@aria-label='Select']"
 NEW_ROW_COST_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'cost-col')]//input[contains(@class,'k-input-inner')]"
 NEW_ROW_DATE_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'date-added-col')]//input[contains(@class,'k-input-inner')]"
