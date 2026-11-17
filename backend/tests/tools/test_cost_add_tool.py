@@ -152,10 +152,26 @@ def test_cost_add_returns_exists_without_any_writes_when_memo_already_present(
 
 
 def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_duplicate_memo):
-    from dealercenter_agent.tools.cost_add_tool import VENDOR_RESULT_ROW_SELECTOR
+    from dealercenter_agent.tools.cost_add_tool import ROW_SELECTOR, VENDOR_RESULT_ROW_SELECTOR
 
     driver = fake_driver_cost_add_duplicate_memo
     driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["Jensen Tire & Auto"]
+    row_count = {"n": 5}
+
+    def on_click(selector: str) -> None:
+        if selector == MODAL_OPEN_SELECTOR:
+            row_count["n"] += 1
+
+    def on_find_all_text(selector: str) -> list[str]:
+        if selector == ROW_SELECTOR:
+            return ["row"] * row_count["n"]
+        if selector == VENDOR_RESULT_ROW_SELECTOR:
+            return ["Jensen Tire & Auto"]
+        return []
+
+    driver.on_click = on_click
+    driver.on_find_all_text = on_find_all_text
+
     result = CostAddTool().run(
         driver,
         category="Repair",
@@ -170,6 +186,34 @@ def test_cost_add_skip_duplicate_check_forces_write_path(fake_driver_cost_add_du
     # Must click Add New first to get a definitely-fresh row, not trust
     # whatever the default last row already held.
     assert driver.clicks.count(MODAL_OPEN_SELECTOR) == 1
+
+
+def test_cost_add_retries_add_new_when_row_count_does_not_increase(fake_driver_cost_add_duplicate_memo):
+    """Add New's click is verified, not trusted — if the row count never
+    goes up, it must retry rather than silently filling a stale row."""
+    from dealercenter_agent.tools.cost_add_tool import ROW_SELECTOR
+
+    driver = fake_driver_cost_add_duplicate_memo
+
+    def on_find_all_text(selector: str) -> list[str]:
+        if selector == ROW_SELECTOR:
+            return ["row"] * 5  # never increases, no matter how many times Add New is clicked
+        return []
+
+    driver.on_find_all_text = on_find_all_text
+
+    with pytest.raises(StepFailure) as exc:
+        CostAddTool().run(
+            driver,
+            category="Repair",
+            cost=Decimal("10"),
+            invoice_date=date(2026, 1, 1),
+            vendor_name="Jensen",
+            memo="X",
+            skip_duplicate_check=True,
+        )
+    assert "did not append a new row" in exc.value.reason
+    assert driver.clicks.count(MODAL_OPEN_SELECTOR) == 3
 
 
 def test_cost_add_duplicate_check_ignores_spaces(fake_driver_cost_add_duplicate_memo):

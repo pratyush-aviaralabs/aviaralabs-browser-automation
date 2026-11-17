@@ -1,3 +1,5 @@
+import re
+import time
 from datetime import date
 from decimal import Decimal
 
@@ -36,22 +38,32 @@ MODAL_OPEN_SELECTOR = "button:has-text('Add New')"
 # confirmed every existing row shows Description == Category (e.g.
 # "Repair"/"Repair", "Parts"/"Parts"), so Description auto-fills from
 # the Category selection and is never set directly.
-# The Category <kendo-combobox>'s own searchbar <input> is readonly and
-# a plain click() on it does not reliably trigger Kendo's popup-open
-# behavior (confirmed live 2026-11-18: automated click() on the input
-# left the dropdown closed, 30s get_by_text timeout; a manual click —
-# presumably landing on the component's own toggle button — opened it
-# fine). Target that dedicated toggle button instead.
-NEW_ROW_CATEGORY_SELECTOR = "tr:last-child .category-col button[aria-label='Select']"
-NEW_ROW_COST_SELECTOR = "tr:last-child .cost-col input.k-input-inner"
-NEW_ROW_DATE_SELECTOR = "tr:last-child .date-added-col input.k-input-inner"
-NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR = "tr:last-child .vendor-col button[title='Search']"
+#
+# CSS `tr:last-child` is NOT "the last row in the table" here — confirmed
+# live (2026-11-18): find_all_values on a tr:last-child-scoped selector
+# returned EVERY row's value (15 for 15 rows), not just the new one.
+# Each <tr> is apparently rendered inside its own Angular host wrapper,
+# so every row independently satisfies :last-child (each is the sole
+# child of its own wrapper). An XPath "(//tr)[last()]" picks the single
+# structurally-last <tr> in document order regardless of wrapping, which
+# is what every NEW_ROW_* selector below actually needs.
+LAST_ROW_XPATH = "xpath=(//tr)[last()]"
+ROW_SELECTOR = "xpath=//tr"
+NEW_ROW_CATEGORY_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'category-col')]//button[@aria-label='Select']"
+NEW_ROW_COST_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'cost-col')]//input[contains(@class,'k-input-inner')]"
+NEW_ROW_DATE_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'date-added-col')]//input[contains(@class,'k-input-inner')]"
+NEW_ROW_VENDOR_SEARCH_ICON_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-col')]//button[@title='Search']"
+# Confirmed visible in every filled row's Vendor cell (the clickable
+# vendor name, e.g. "Jensen Tire & Auto") — absent on a genuinely blank
+# row, which shows the "Search Vendor" placeholder with no <a>. Used by
+# the blank-row guard, not by the fill/select flow itself.
+NEW_ROW_VENDOR_LINK_SELECTOR = LAST_ROW_XPATH + "//td[contains(@class,'vendor-col')]//a"
 # The "Search or Add Vendor" dialog this button opens, and its result
 # row, are still UNVERIFIED — not reached yet, needs its own live
 # console check before this path is trusted.
 VENDOR_SEARCH_INPUT_SELECTOR = "[role='dialog'] input[placeholder*='Search' i]"
 VENDOR_RESULT_ROW_SELECTOR = "[role='dialog'] .vendor-search-result-row"
-NEW_ROW_MEMO_SELECTOR = "tr:last-child input[formcontrolname='memo']"
+NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
 # per the existing skill's duplicate-invoice rule. Must be read with
@@ -61,9 +73,25 @@ NEW_ROW_MEMO_SELECTOR = "tr:last-child input[formcontrolname='memo']"
 EXISTING_MEMO_SELECTOR = "input[formcontrolname='memo']"
 SAVE_BUTTON_SELECTOR = "button.save-btn"
 
+MAX_ADD_NEW_ATTEMPTS = 3
+
 
 def _normalize_memo(text: str) -> str:
     return text.replace(" ", "")
+
+
+def _is_blank_amount(raw: str) -> bool:
+    """True for "", "$0.00", "0", "0.00", etc. — anything that isn't a
+    real nonzero amount. Used by the blank-row guard; unparseable input
+    is treated as NOT blank (fail closed, per "if a single field has
+    some value then we don't update it")."""
+    digits = re.sub(r"[^0-9.]", "", raw)
+    if digits in ("", "0", "0.0", "0.00"):
+        return True
+    try:
+        return float(digits) == 0.0
+    except ValueError:
+        return False
 
 
 class CostAddTool(Tool):
@@ -119,22 +147,29 @@ class CostAddTool(Tool):
             # Forcing the write path deliberately (manual testing only) —
             # click Add New first so we fill a fresh, definitely-blank
             # row instead of trusting whatever the default last row
-            # currently holds. NEW_ROW_* selectors target tr:last-child,
-            # which becomes this new row once it's appended.
-            driver.click(MODAL_OPEN_SELECTOR)
+            # currently holds. Verify the click actually landed a new
+            # row (confirmed live 2026-11-18 that a single click can
+            # silently no-op) and retry rather than proceeding blind.
+            self._click_add_new_and_verify(driver)
 
         # Guard against writing into a row that already has data — relying
-        # on tr:last-child always being the fresh blank row is only as
-        # good as that assumption holding. A real new row's Memo is
-        # always blank; any value there means something upstream (row
-        # count, a stale selector, Add New not actually landing a new
-        # row) didn't go the way we expect, so stop instead of risking a
-        # write into existing data.
+        # on "(//tr)[last()]" always being the fresh blank row is only as
+        # good as that assumption holding. Check every field we can read
+        # cheaply (Memo, Cost, Vendor link) — if ANY of them already has
+        # a value, stop instead of risking a write into existing data.
+        # Category/Description aren't included here since their current
+        # selection isn't reliably readable without opening the dropdown.
         row_memo = driver.find_all_values(NEW_ROW_MEMO_SELECTOR)
-        if any(v.strip() for v in row_memo):
+        row_cost = driver.find_all_values(NEW_ROW_COST_SELECTOR)
+        row_vendor_links = driver.find_all_text(NEW_ROW_VENDOR_LINK_SELECTOR)
+        memo_filled = any(v.strip() for v in row_memo)
+        cost_filled = any(not _is_blank_amount(v) for v in row_cost)
+        vendor_filled = any(v.strip() for v in row_vendor_links)
+        if memo_filled or cost_filled or vendor_filled:
             raise StepFailure(
                 self.name,
-                f"expected a blank new row but its Memo already has a value: {row_memo!r}",
+                "expected a blank new row but found existing data: "
+                f"memo={row_memo!r} cost={row_cost!r} vendor_linked={row_vendor_links!r}",
             )
 
         # Cost, Category, and Memo are the fields this entry must have —
@@ -157,6 +192,23 @@ class CostAddTool(Tool):
             data["warnings"] = [vendor_warning]
             print(f"[{self.name}] WARNING: {vendor_warning}")
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
+
+    def _click_add_new_and_verify(self, driver: BrowserDriver) -> None:
+        """Click Add New and confirm the row count actually went up —
+        confirmed live (2026-11-18) that trusting the click alone isn't
+        enough; retries a few times before giving up rather than
+        silently filling whatever row happened to be last already."""
+        before = len(driver.find_all_text(ROW_SELECTOR))
+        for _ in range(MAX_ADD_NEW_ATTEMPTS):
+            driver.click(MODAL_OPEN_SELECTOR)
+            time.sleep(0.5)
+            after = len(driver.find_all_text(ROW_SELECTOR))
+            if after > before:
+                return
+            before = after
+        raise StepFailure(
+            self.name, f"Add New did not append a new row after {MAX_ADD_NEW_ATTEMPTS} attempts"
+        )
 
     def _select_vendor(self, driver: BrowserDriver, vendor_name: str) -> str | None:
         """Best-effort: Cost/Category/Memo are the required fields, Vendor
