@@ -148,14 +148,16 @@ def _normalize_memo(text: str) -> str:
 
 
 def _read_vendor_results_with_retry(
-    driver: BrowserDriver, before_count: int, attempts: int = 5, delay_ms: int = 400
+    driver: BrowserDriver, before_count: int, attempts: int = 12, delay_ms: int = 700
 ) -> list[str]:
     """Same bug class as SearchInvoiceTool's dropdown race: reading the
-    result list right after fill() can catch it before Angular
-    re-renders from the unfiltered ~98-vendor list down to the filtered
-    one. Retry until the count actually changes from its pre-filter
-    baseline, not just until it's non-empty (the unfiltered list is
-    non-empty too)."""
+    result list right after fill() can catch it before the filtered
+    results actually land. Confirmed live (2026-11-18) that this search
+    isn't instant client-side filtering — it visibly takes a few real
+    seconds — so a short ~2s retry window wasn't enough; ~8s total gives
+    it a real chance. Retry until the count actually changes from its
+    pre-filter baseline, not just until it's non-empty (the unfiltered
+    list is non-empty too)."""
     results = driver.find_all_text(VENDOR_RESULT_ROW_SELECTOR)
     for attempt in range(attempts):
         if len(results) != before_count:
