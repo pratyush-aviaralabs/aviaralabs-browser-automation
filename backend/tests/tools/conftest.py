@@ -1,0 +1,66 @@
+import pytest
+
+from dealercenter_agent.tools.login_tool import (
+    AUTH_HOST,
+    BASE_URL,
+    MFA_CODE_SELECTOR,
+    PASSWORD_SELECTOR,
+    SEARCH_BOX_SELECTOR,
+    USERNAME_SELECTOR,
+)
+
+from ..fakes import FakeBrowserDriver
+
+LOGIN_URL = f"https://{AUTH_HOST}/u/login"
+MFA_URL = f"https://{AUTH_HOST}/u/mfa-email-challenge"
+DASHBOARD_URL = f"{BASE_URL}/apps/shell/reports/home"
+
+
+@pytest.fixture
+def fake_driver_already_logged_in() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.current_url_value = DASHBOARD_URL
+    driver.on_wait_visible = lambda sel, t: "search" in sel.lower() or sel == SEARCH_BOX_SELECTOR
+    return driver
+
+
+def _stage_machine_driver(mfa_accepts: bool) -> FakeBrowserDriver:
+    state = {"stage": "login_page"}
+    driver = FakeBrowserDriver()
+
+    def current_url() -> str:
+        return {"login_page": LOGIN_URL, "mfa_page": MFA_URL, "dashboard": DASHBOARD_URL}[
+            state["stage"]
+        ]
+
+    def on_submit(_selector: str) -> None:
+        if state["stage"] == "login_page":
+            state["stage"] = "mfa_page"
+        elif state["stage"] == "mfa_page" and mfa_accepts:
+            state["stage"] = "dashboard"
+        # mfa_accepts=False: stays on mfa_page forever, simulating rejection
+
+    def on_wait_visible(selector: str, _timeout_ms: int) -> bool:
+        stage = state["stage"]
+        if stage == "dashboard":
+            return "search" in selector.lower()
+        if stage == "login_page":
+            return selector in (USERNAME_SELECTOR, PASSWORD_SELECTOR)
+        if stage == "mfa_page":
+            return selector == MFA_CODE_SELECTOR
+        return False
+
+    driver.current_url = current_url  # type: ignore[method-assign]
+    driver.on_click_submit_near = on_submit
+    driver.on_wait_visible = on_wait_visible
+    return driver
+
+
+@pytest.fixture
+def fake_driver_requires_mfa() -> FakeBrowserDriver:
+    return _stage_machine_driver(mfa_accepts=True)
+
+
+@pytest.fixture
+def fake_driver_always_rejects_mfa() -> FakeBrowserDriver:
+    return _stage_machine_driver(mfa_accepts=False)
