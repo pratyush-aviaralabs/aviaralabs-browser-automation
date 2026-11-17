@@ -35,3 +35,8 @@ def modal_chain_fixture_url() -> str:
 @pytest.fixture
 def rows_fixture_url() -> str:
     return (FIXTURES_DIR / "rows.html").as_uri()
+
+
+@pytest.fixture
+def dropdown_fixture_url() -> str:
+    return (FIXTURES_DIR / "dropdown.html").as_uri()

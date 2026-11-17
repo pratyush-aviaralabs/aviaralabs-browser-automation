@@ -11,7 +11,9 @@ from dealercenter_agent.tools.login_tool import (
 from dealercenter_agent.tools.search_invoice_tool import (
     DEAL_ROW_SELECTOR,
     INVENTORY_ROW_SELECTOR,
+    SEARCH_BOX_SELECTOR as SEARCH_INVOICE_BOX_SELECTOR,
 )
+from dealercenter_agent.tools.cost_add_tool import VENDOR_RESULT_ROW_SELECTOR
 
 from ..fakes import FakeBrowserDriver
 
@@ -104,6 +106,25 @@ def fake_driver_url_lags_behind_redirect() -> FakeBrowserDriver:
 def fake_driver_one_inventory_match() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["2022 FORD F150 ... Last 6 VIN: G16336"]
+    driver.on_wait_visible = lambda sel, t: True  # vehicle detail page "loads" after the click
+    return driver
+
+
+@pytest.fixture
+def fake_driver_falls_back_to_stock_number() -> FakeBrowserDriver:
+    """VIN tier finds nothing in either block; stock-number tier finds a
+    single Inventory match. Proves the two-tier fallback actually tries
+    tier 2 instead of stopping at tier 1's clean zero-match."""
+    driver = FakeBrowserDriver()
+
+    def on_find_all_text(selector: str) -> list[str]:
+        last_query = driver.filled.get(SEARCH_INVOICE_BOX_SELECTOR)
+        if selector == INVENTORY_ROW_SELECTOR and last_query == "22421":
+            return ["2022 FORD F150 ... Stock #: 22421"]
+        return []
+
+    driver.on_find_all_text = on_find_all_text
+    driver.on_wait_visible = lambda sel, t: True
     return driver
 
 
@@ -127,4 +148,35 @@ def fake_driver_no_matches() -> FakeBrowserDriver:
 def fake_driver_two_inventory_matches() -> FakeBrowserDriver:
     driver = FakeBrowserDriver()
     driver.find_all_text_results[INVENTORY_ROW_SELECTOR] = ["row one", "row two"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_cost_add_vendor_found() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True  # modal + vendor search box both "open" fine
+    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["JENSEN TIRE & AUTO"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_cost_add_no_vendor_match() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True
+    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = []
+    return driver
+
+
+@pytest.fixture
+def fake_driver_cost_add_ambiguous_vendor() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: True
+    driver.find_all_text_results[VENDOR_RESULT_ROW_SELECTOR] = ["Jensen Tire", "Jensen Auto Body"]
+    return driver
+
+
+@pytest.fixture
+def fake_driver_cost_add_modal_never_opens() -> FakeBrowserDriver:
+    driver = FakeBrowserDriver()
+    driver.on_wait_visible = lambda sel, t: False
     return driver

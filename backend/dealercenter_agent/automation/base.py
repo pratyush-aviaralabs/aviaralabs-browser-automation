@@ -36,6 +36,16 @@ class BrowserDriver(ABC):
     def dismiss_blocking_modals(self, max_rounds: int = 5) -> None: ...
 
     @abstractmethod
+    def select_option(self, trigger_selector: str, option_text: str) -> None:
+        """Open a custom (e.g. Kendo) dropdown at trigger_selector and
+        click the option matching option_text. One gesture, not
+        click()+click(), because the options list is typically rendered
+        into a popup that isn't nested under the trigger in the DOM —
+        composing it from two generic clicks would make every Tool that
+        uses a dropdown re-derive that same engine-specific detail."""
+        ...
+
+    @abstractmethod
     def get_text(self, selector: str) -> str: ...
 
     @abstractmethod

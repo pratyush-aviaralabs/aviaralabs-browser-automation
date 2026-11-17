@@ -45,3 +45,12 @@ def test_find_all_text_returns_one_entry_per_match(playwright_page, rows_fixture
     driver = PlaywrightDriver(playwright_page)
     driver.goto(rows_fixture_url)
     assert driver.find_all_text(".row") == ["Row A", "Row B", "Row C"]
+
+
+def test_select_option_opens_dropdown_and_clicks_matching_text(
+    playwright_page, dropdown_fixture_url
+):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(dropdown_fixture_url)
+    driver.select_option("#trigger", "Repair")
+    assert playwright_page.evaluate("window.__selected__") == "Repair"

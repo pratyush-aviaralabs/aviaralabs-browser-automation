@@ -94,6 +94,10 @@ class PlaywrightDriver(BrowserDriver):
         except Exception:
             pass
 
+    def select_option(self, trigger_selector: str, option_text: str) -> None:
+        self.page.locator(trigger_selector).first.click()
+        self.page.get_by_text(option_text, exact=True).first.click()
+
     def get_text(self, selector: str) -> str:
         return self.page.locator(selector).first.inner_text()
 

@@ -1,0 +1,18 @@
+<!doctype html>
+<html>
+<body>
+  <!--
+    Minimal stand-in for a Kendo-style custom dropdown: clicking the
+    trigger reveals a popup list (not nested under the trigger) with
+    clickable option text.
+  -->
+  <button id="trigger" onclick="document.getElementById('popup').style.display='block'">
+    Select...
+  </button>
+  <div id="popup" style="display:none;">
+    <div onclick="window.__selected__='Repair'">Repair</div>
+    <div onclick="window.__selected__='Other'">Other</div>
+  </div>
+  <script>window.__selected__ = null;</script>
+</body>
+</html>
