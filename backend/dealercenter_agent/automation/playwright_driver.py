@@ -29,22 +29,35 @@ class PlaywrightDriver(BrowserDriver):
 
     def __init__(self, page: Page):
         self.page = page
+        self._frame_selector: str | None = None
+
+    def enter_iframe(self, selector: str) -> None:
+        self._frame_selector = selector
+
+    def exit_iframe(self) -> None:
+        self._frame_selector = None
 
     def _locator(self, selector: str):
-        """Resolves a selector to a Playwright Locator, transparently
-        supporting a reserved "iframe=<frame_selector> >> <inner_selector>"
-        convention for content inside an <iframe> — confirmed live
-        (2026-11-18) that DealerCenter renders a Deal's own contract
-        view (where the vehicle quick-link lives) inside an <iframe
-        id="dc-iframe-dialog">, which a plain page.locator() can never
-        reach regardless of selector correctness; Playwright requires
-        an explicit frame_locator() for that. Every other method here
-        routes through this instead of calling self.page.locator()
-        directly, so any selector in the codebase can opt into
-        targeting iframe content with the same convention."""
+        """Resolves a selector to a Playwright Locator.
+
+        Supports a reserved "iframe=<frame_selector> >> <inner_selector>"
+        prefix for a one-off selector that targets iframe content
+        regardless of the current enter_iframe() state. Otherwise, if
+        enter_iframe() has set a standing frame context, EVERY selector
+        resolves inside that frame instead of the top-level page —
+        confirmed live (2026-11-18) that DealerCenter renders a Deal's
+        entire "Edit Vehicle" surface (Cost Adds, vendor search, Save
+        Confirmation — everything CostAddTool/FileUploadTool touch)
+        inside a single <iframe id="dc-iframe-dialog">, which a plain
+        page.locator() can never reach regardless of selector
+        correctness. Falls back to the plain top-level page.locator()
+        when no frame context is active — the Inventory path's
+        behavior, unchanged."""
         if selector.startswith("iframe="):
             frame_selector, inner_selector = selector[len("iframe="):].split(" >> ", 1)
             return self.page.frame_locator(frame_selector).locator(inner_selector)
+        if self._frame_selector is not None:
+            return self.page.frame_locator(self._frame_selector).locator(selector)
         return self.page.locator(selector)
 
     def goto(self, url: str) -> None:
@@ -142,7 +155,12 @@ class PlaywrightDriver(BrowserDriver):
 
     def select_option(self, trigger_selector: str, option_text: str) -> None:
         self._locator(trigger_selector).first.click()
-        self.page.get_by_text(option_text, exact=True).first.click()
+        # Not self.page.get_by_text() directly — must also respect an
+        # active enter_iframe() context, or Category selection breaks
+        # for anything inside a Deal's iframe (confirmed live
+        # 2026-11-18 that this whole surface lives in one).
+        scope = self.page.frame_locator(self._frame_selector) if self._frame_selector else self.page
+        scope.get_by_text(option_text, exact=True).first.click()
 
     def upload_via_button(self, trigger_selector: str, file_path: str) -> None:
         with self.page.expect_file_chooser() as fc_info:

@@ -10,6 +10,27 @@ class BrowserDriver(ABC):
     def goto(self, url: str) -> None: ...
 
     @abstractmethod
+    def enter_iframe(self, selector: str) -> None:
+        """From here on, every selector-based call (click, fill,
+        find_all_text, etc.) resolves inside the <iframe> matching
+        selector instead of the top-level page — until exit_iframe().
+        Confirmed live (2026-11-18): a Deal match's entire "Edit
+        Vehicle" surface (Cost Adds, vendor search, Save Confirmation —
+        everything CostAddTool/FileUploadTool touch) renders inside
+        DealerCenter's own <iframe id="dc-iframe-dialog">, while the
+        Inventory path's equivalent page never does. This lets
+        SearchInvoiceTool switch context once after landing on a Deal's
+        Edit Vehicle modal, so every downstream Tool keeps working
+        completely unchanged — none of their selectors need to know
+        whether they're inside an iframe or not."""
+        ...
+
+    @abstractmethod
+    def exit_iframe(self) -> None:
+        """Return to resolving selectors against the top-level page."""
+        ...
+
+    @abstractmethod
     def current_url(self) -> str: ...
 
     @abstractmethod

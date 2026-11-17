@@ -2,6 +2,7 @@ import pytest
 
 from dealercenter_agent.tools.base import StepFailure, ToolStatus
 from dealercenter_agent.tools.search_invoice_tool import (
+    DEAL_CONTRACT_IFRAME_SELECTOR,
     SEARCH_BOX_SELECTOR,
     SEARCH_RESULT_ROW_SELECTOR,
     SearchInvoiceTool,
@@ -40,6 +41,19 @@ def test_search_finds_single_deal_match_and_clicks_through_to_edit_vehicle(fake_
     assert result.status == ToolStatus.SUCCESS
     assert result.data["match_type"] == "deal"
     assert SEARCH_RESULT_ROW_SELECTOR in fake_driver_only_deal_match.clicks
+    # Confirmed live (2026-11-18): the ENTIRE Edit Vehicle surface
+    # (Cost Adds, vendor search, Save Confirmation) lives inside this
+    # iframe too, not just its own title text — every downstream Tool
+    # needs the driver switched into this context to work at all.
+    assert fake_driver_only_deal_match.frame_selector == DEAL_CONTRACT_IFRAME_SELECTOR
+
+
+def test_search_inventory_match_does_not_enter_an_iframe_context(fake_driver_one_inventory_match):
+    result = SearchInvoiceTool().run(
+        fake_driver_one_inventory_match, vin="1FTFW1E81NFAG16336", stock_number=None
+    )
+    assert result.data["match_type"] == "inventory"
+    assert fake_driver_one_inventory_match.frame_selector is None
 
 
 def test_search_fails_when_deal_details_modal_never_opens(fake_driver_deal_details_never_opens):

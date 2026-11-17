@@ -43,13 +43,16 @@ DEAL_CONTRACT_IFRAME_SELECTOR = "#dc-iframe-dialog"
 DEAL_DETAILS_VEHICLE_LINK_SELECTOR = (
     f"iframe={DEAL_CONTRACT_IFRAME_SELECTOR} >> a[dcuisharedstopclickpropagation] span.d-block"
 )
-# UNVERIFIED — clicking that link opens a further "Edit Vehicle" modal,
-# functionally identical in structure to the Inventory page's own
-# vehicle detail view (same Cost Info/Cost Adds section, same tabs:
-# Vehicle Info, Marketing, Media, ..., Files), so CostAddTool/
-# FileUploadTool should work against it unchanged once reached — but
-# this confirmation selector itself hasn't been verified live yet.
-EDIT_VEHICLE_MODAL_SELECTOR = "text=/Edit Vehicle/i"
+# Confirmed live (2026-11-18): clicking that link opens a further
+# "Edit Vehicle" modal, functionally identical in structure to the
+# Inventory page's own vehicle detail view (same Cost Info/Cost Adds
+# section, same tabs). It ALSO lives inside the same iframe — checked
+# directly via console: document.body.innerText misses it entirely,
+# iframe.contentDocument.body.innerText has it. Checked with the
+# "iframe=" prefix specifically (not yet via enter_iframe(), which
+# only gets switched on AFTER this confirms, so every earlier check in
+# this method still correctly targets the top-level page).
+EDIT_VEHICLE_MODAL_SELECTOR = f"iframe={DEAL_CONTRACT_IFRAME_SELECTOR} >> text=/Edit Vehicle/i"
 
 
 def _read_rows_with_retry(driver: BrowserDriver, selector: str, attempts: int = 3, delay_ms: int = 300) -> list[str]:
@@ -173,6 +176,14 @@ class SearchInvoiceTool(Tool):
                 raise StepFailure(
                     self.name, "clicked the vehicle link in Deal Details but Edit Vehicle modal did not open"
                 )
+            # From here on, every downstream Tool (CostAddTool,
+            # FileUploadTool, ...) needs to resolve its selectors
+            # inside this same iframe — confirmed live (2026-11-18)
+            # that the ENTIRE Edit Vehicle surface, not just its own
+            # title text, lives there. enter_iframe() makes every
+            # subsequent selector-based call on this driver transparent
+            # to that, with zero changes needed in any other Tool.
+            driver.enter_iframe(DEAL_CONTRACT_IFRAME_SELECTOR)
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 data={"match_type": "deal", "row_text": deal_rows[0], "query": query},
