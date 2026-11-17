@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Callable
 
+from dotenv import load_dotenv
+
 from ..automation.playwright_driver import create_playwright_driver
 from ..tools.base import StepFailure, ToolStatus
 from ..tools.file_upload_tool import FileUploadTool
@@ -20,6 +22,11 @@ from ..tools.verify_file_upload_tool import VerifyFileUploadTool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 STATE_FILE = PROJECT_ROOT / ".auth_state.json"
+
+# uvicorn starts as a fresh process with no .env loaded — unlike the
+# manual_*.py scripts, which each called this themselves, nothing else
+# in the web app's import chain does this, so it has to happen here.
+load_dotenv(PROJECT_ROOT / ".env")
 
 EventSink = Callable[[dict], None]
 
