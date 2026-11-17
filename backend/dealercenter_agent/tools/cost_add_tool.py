@@ -16,6 +16,10 @@ VALID_CATEGORIES = ("Repair", "Other")
 # Everything below this line in the Cost Adds modal (row fields, vendor
 # search, Save) is still unverified — not reached yet.
 COST_ADDS_LINK_SELECTOR = "text=/Cost Adds/i >> xpath=following::button[1]"
+# Confirmed visible in the real modal (2026-11-17) — used purely to
+# confirm the modal opened, since the exact new-row field selectors
+# below are still unverified.
+MODAL_OPEN_SELECTOR = "button:has-text('Add New')"
 NEW_ROW_DESCRIPTION_SELECTOR = ".k-grid-table tr:last-child [data-field='Description']"
 NEW_ROW_CATEGORY_SELECTOR = ".k-grid-table tr:last-child [data-field='Category']"
 NEW_ROW_COST_SELECTOR = ".k-grid-table tr:last-child [data-field='Cost'] input"
@@ -66,7 +70,7 @@ class CostAddTool(Tool):
             )
 
         driver.click(COST_ADDS_LINK_SELECTOR)
-        if not driver.wait_visible(NEW_ROW_DESCRIPTION_SELECTOR, timeout_ms=10000):
+        if not driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=10000):
             raise StepFailure(self.name, "Cost Adds modal did not open")
 
         existing_memos = driver.find_all_text(EXISTING_MEMO_SELECTOR)
