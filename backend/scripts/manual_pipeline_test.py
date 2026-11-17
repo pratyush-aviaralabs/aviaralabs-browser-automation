@@ -3,8 +3,10 @@
 DealerCenter site. Not part of the automated test suite — run this
 yourself, same reason as every other manual_*.py script here.
 
-Flow: Login -> Search -> CostAdd -> FileUpload -> Verify. Inventory
-matches only for now — the Deal-path click-through isn't built yet.
+Flow: Login -> Search -> CostAdd -> FileUpload -> Verify. Both
+Inventory and Deal matches click through to CostAddTool/FileUploadTool
+(the "Edit Vehicle" modal a Deal match lands on is functionally the
+same vehicle-detail surface, confirmed live 2026-11-18).
 
 Usage:
   venv/bin/python scripts/manual_pipeline_test.py <vin> <vendor_name> <invoice_number> <cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> <pdf_path> [--skip-duplicate-check]
@@ -92,10 +94,10 @@ def main():
         print(f"[search] {search_result.status} match_type={search_result.data['match_type']}")
         print(f"[search] row_text={search_result.data['row_text']!r}")
 
-        if search_result.data["match_type"] != "inventory":
-            print("[!] Deal-path click-through isn't built yet — stopping here.")
-            input("\nPress Enter to close the browser... ")
-            return 1
+        # Deal matches now click through to the same "Edit Vehicle"
+        # modal CostAddTool/FileUploadTool already work against
+        # (confirmed live 2026-11-18) — both match types proceed the
+        # same way from here.
 
         # Catches everything, not just StepFailure — a raw Playwright
         # error here must not close the browser before you get a chance
