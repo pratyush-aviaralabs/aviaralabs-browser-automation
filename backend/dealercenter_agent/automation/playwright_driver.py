@@ -69,6 +69,13 @@ class PlaywrightDriver(BrowserDriver):
         except Exception:
             return False
 
+    def wait_hidden(self, selector: str, timeout_ms: int = 2000) -> bool:
+        try:
+            self.page.locator(selector).first.wait_for(state="hidden", timeout=timeout_ms)
+            return True
+        except Exception:
+            return False
+
     def dismiss_blocking_modals(self, max_rounds: int = 5) -> None:
         for _ in range(max_rounds):
             trust_btn = self.page.locator(TRUST_BROWSER_BUTTON_SELECTOR).first

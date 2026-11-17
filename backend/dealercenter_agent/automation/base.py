@@ -47,6 +47,17 @@ class BrowserDriver(ABC):
     def dismiss_blocking_modals(self, max_rounds: int = 5) -> None: ...
 
     @abstractmethod
+    def wait_hidden(self, selector: str, timeout_ms: int = 2000) -> bool:
+        """Poll for the element to become hidden or detached from the
+        DOM; return False on timeout rather than raising. Needed because
+        closing a Kendo dialog doesn't mean its backdrop overlay has
+        finished its closing animation yet — confirmed live (2026-11-18)
+        that clicking Save immediately after a dialog visibly closed
+        still got blocked for 30s by that dialog's own leftover
+        k-overlay, still mid-"appear" transition."""
+        ...
+
+    @abstractmethod
     def select_option(self, trigger_selector: str, option_text: str) -> None:
         """Open a custom (e.g. Kendo) dropdown at trigger_selector and
         click the option matching option_text. One gesture, not

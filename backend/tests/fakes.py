@@ -27,6 +27,7 @@ class FakeBrowserDriver(BrowserDriver):
         self.on_find_all_text: Callable[[str], list[str]] | None = None
         self.on_find_all_values: Callable[[str], list[str]] | None = None
         self.on_click: Callable[[str], None] | None = None
+        self.on_wait_hidden: Callable[[str, int], bool] | None = None
 
     def goto(self, url: str) -> None:
         pass
@@ -57,6 +58,11 @@ class FakeBrowserDriver(BrowserDriver):
 
     def dismiss_blocking_modals(self, max_rounds: int = 5) -> None:
         self.dismiss_called = True
+
+    def wait_hidden(self, selector: str, timeout_ms: int = 2000) -> bool:
+        if self.on_wait_hidden:
+            return self.on_wait_hidden(selector, timeout_ms)
+        return True
 
     def get_text(self, selector: str) -> str:
         return self.get_text_value

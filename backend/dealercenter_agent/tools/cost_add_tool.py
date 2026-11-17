@@ -105,6 +105,18 @@ VENDOR_SEARCH_INPUT_SELECTOR = VENDOR_DIALOG_XPATH + "//input[contains(@class,'k
 # text (its only content).
 VENDOR_RESULT_ROW_SELECTOR = VENDOR_DIALOG_XPATH + "//div[contains(@class,'row') and contains(@class,'mb-2')]"
 VENDOR_DIALOG_CLOSE_SELECTOR = VENDOR_DIALOG_XPATH + "//button[@title='Close']"
+# The dialog's own backdrop is a PRECEDING SIBLING of its role='dialog'
+# div, both children of the same <kendo-dialog> wrapper (confirmed live
+# 2026-11-18). Clicking a vendor result closes the dialog itself
+# quickly, but that backdrop's closing animation can still be mid-
+# "appear" transition afterward — confirmed live: Save got blocked for
+# 30s by exactly this element (tagged with the VENDOR dialog's own
+# instance id, not the outer Cost Adds dialog's) even though the
+# dialog had already visibly closed and no warning was ever logged.
+# Must explicitly wait for this to clear, not just the dialog.
+VENDOR_DIALOG_OVERLAY_SELECTOR = (
+    "xpath=(" + VENDOR_DIALOG_XPATH[len("xpath="):] + ")/preceding-sibling::div[contains(@class,'k-overlay')]"
+)
 NEW_ROW_MEMO_SELECTOR = LAST_ROW_XPATH + "//input[@formcontrolname='memo']"
 # All rows' Memo cells (existing entries, unlike NEW_ROW_MEMO_SELECTOR
 # which only targets the blank last row) — read before adding anything,
@@ -346,6 +358,14 @@ class CostAddTool(Tool):
                 # happen silently with no exception at all.
                 self._close_vendor_dialog(driver)
                 return f"selecting {match!r} did not close the vendor dialog — Vendor left unset"
+            # The dialog itself closed, but confirmed live (2026-11-18)
+            # that its backdrop's closing animation can still be
+            # mid-transition — wait for it specifically before handing
+            # control back, or the next click (Memo fill, Save) can get
+            # blocked by a leftover overlay even though nothing here
+            # failed. Best-effort: don't abort the entry over a slow
+            # animation, just give it a real chance to finish.
+            driver.wait_hidden(VENDOR_DIALOG_OVERLAY_SELECTOR, timeout_ms=15000)
             return None
         except Exception as exc:
             self._close_vendor_dialog(driver)
