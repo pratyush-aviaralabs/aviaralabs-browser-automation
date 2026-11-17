@@ -6,12 +6,16 @@ from .base import StepFailure, Tool, ToolResult, ToolStatus
 
 VALID_CATEGORIES = ("Repair", "Other")
 
-# Best-guess placeholders, unverified against the live Cost Adds modal's
-# real DOM (only seen in screenshots so far) — same situation
-# SearchInvoiceTool's row selectors were in before being corrected
-# against the real page. These are the one place to fix once the actual
-# markup is confirmed.
-COST_ADDS_LINK_SELECTOR = "text=/Cost Adds/i >> xpath=following::a[1]"
+# COST_ADDS_LINK_SELECTOR confirmed against the real DOM via console
+# dump (2026-11-17): the dollar-amount next to the "Cost Adds" label is
+# a Kendo <button fillmode="link"> containing a <span class="k-button-
+# text">, NOT an <a> tag — the original guess looked for the wrong
+# element type entirely. Still anchored by XPath to the "Cost Adds" text
+# since the amount itself is vehicle-specific.
+#
+# Everything below this line in the Cost Adds modal (row fields, vendor
+# search, Save) is still unverified — not reached yet.
+COST_ADDS_LINK_SELECTOR = "text=/Cost Adds/i >> xpath=following::button[1]"
 NEW_ROW_DESCRIPTION_SELECTOR = ".k-grid-table tr:last-child [data-field='Description']"
 NEW_ROW_CATEGORY_SELECTOR = ".k-grid-table tr:last-child [data-field='Category']"
 NEW_ROW_COST_SELECTOR = ".k-grid-table tr:last-child [data-field='Cost'] input"
