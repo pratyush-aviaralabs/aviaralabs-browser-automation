@@ -1,3 +1,5 @@
+import time
+
 from ..automation.base import BrowserDriver
 from .base import StepFailure, Tool, ToolResult, ToolStatus
 
@@ -17,6 +19,22 @@ DEAL_ROW_SELECTOR = "[data-section='deal'] .search-result-row"
 # Confirms the click actually landed on the vehicle detail page (where
 # Cost Info / Cost Adds live) — also a placeholder.
 VEHICLE_DETAIL_LOADED_SELECTOR = "text=/Cost Info/i"
+
+
+def _read_rows_with_retry(driver: BrowserDriver, selector: str, attempts: int = 3, delay_ms: int = 300) -> list[str]:
+    """Confirmed live (2026-11-17): wait_visible() can succeed, and the
+    very next find_all_text() call still reads empty — a brief re-render
+    gap in Angular's reactive list, not a wrong selector (the same
+    selector read correctly a second later via manual console check).
+    A single read right after a wait isn't enough on its own; retry the
+    read itself a few times before trusting 'nothing here'."""
+    for attempt in range(attempts):
+        rows = driver.find_all_text(selector)
+        if rows:
+            return rows
+        if attempt < attempts - 1:
+            time.sleep(delay_ms / 1000)
+    return []
 
 
 class SearchInvoiceTool(Tool):
@@ -66,7 +84,7 @@ class SearchInvoiceTool(Tool):
         # race and dismiss_blocking_modals' async-modal race.
         driver.wait_visible(f"{INVENTORY_ROW_SELECTOR}, {DEAL_ROW_SELECTOR}", timeout_ms=8000)
 
-        inventory_rows = driver.find_all_text(INVENTORY_ROW_SELECTOR)
+        inventory_rows = _read_rows_with_retry(driver, INVENTORY_ROW_SELECTOR)
         if len(inventory_rows) > 1:
             raise StepFailure(
                 self.name,
@@ -83,7 +101,7 @@ class SearchInvoiceTool(Tool):
                 data={"match_type": "inventory", "row_text": inventory_rows[0], "query": query},
             )
 
-        deal_rows = driver.find_all_text(DEAL_ROW_SELECTOR)
+        deal_rows = _read_rows_with_retry(driver, DEAL_ROW_SELECTOR)
         if len(deal_rows) > 1:
             raise StepFailure(
                 self.name,
