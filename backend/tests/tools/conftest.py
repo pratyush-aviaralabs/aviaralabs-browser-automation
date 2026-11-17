@@ -15,6 +15,8 @@ from dealercenter_agent.tools.search_invoice_tool import (
 )
 from dealercenter_agent.tools.cost_add_tool import (
     EXISTING_MEMO_SELECTOR,
+    MODAL_OPEN_SELECTOR as COST_ADD_MODAL_OPEN_SELECTOR,
+    ROW_SELECTOR,
     VENDOR_RESULT_ROW_SELECTOR,
     VENDOR_SEARCH_INPUT_SELECTOR,
 )
@@ -213,14 +215,22 @@ def _vendor_dialog_driver(results_by_query) -> FakeBrowserDriver:
 
     results_by_query: a static list[str] (same regardless of query) or
     a callable(query: str) -> list[str] for query-dependent scenarios
-    (e.g. testing the full-name-fails/first-word-fallback path)."""
+    (e.g. testing the full-name-fails/first-word-fallback path).
+
+    Also models Add New: CostAddTool now ALWAYS clicks it before
+    filling (confirmed live 2026-11-18 that a default blank row can't
+    be trusted to exist), so every test driver needs ROW_SELECTOR's
+    count to increase by one on the first click of MODAL_OPEN_SELECTOR
+    (the "Add New" button) or _click_add_new_and_verify raises."""
     driver = FakeBrowserDriver()
-    state = {"calls": 0, "selected": False}
+    state = {"calls": 0, "selected": False, "rows": 5}
 
     def resolve(query: str) -> list[str]:
         return results_by_query(query) if callable(results_by_query) else results_by_query
 
     def on_find_all_text(selector: str) -> list[str]:
+        if selector == ROW_SELECTOR:
+            return ["row"] * state["rows"]
         if selector != VENDOR_RESULT_ROW_SELECTOR:
             return []
         state["calls"] += 1
@@ -229,6 +239,8 @@ def _vendor_dialog_driver(results_by_query) -> FakeBrowserDriver:
         return resolve(driver.typed.get(VENDOR_SEARCH_INPUT_SELECTOR, ""))
 
     def on_click(selector: str) -> None:
+        if selector == COST_ADD_MODAL_OPEN_SELECTOR:
+            state["rows"] += 1
         if "mb-2" in selector:
             state["selected"] = True
 
@@ -256,6 +268,20 @@ def fake_driver_cost_add_duplicate_memo() -> FakeBrowserDriver:
     driver.on_wait_visible = lambda sel, t: True
     # Space in the existing memo on purpose — the check must ignore spaces.
     driver.find_all_values_results[EXISTING_MEMO_SELECTOR] = ["276 289", ""]
+    # Not used by the EXISTS-short-circuit tests (they return before Add
+    # New), but needed by the skip_duplicate_check tests that reuse this
+    # fixture and DO reach Add New.
+    state = {"rows": 5}
+
+    def on_click(selector: str) -> None:
+        if selector == COST_ADD_MODAL_OPEN_SELECTOR:
+            state["rows"] += 1
+
+    def on_find_all_text(selector: str) -> list[str]:
+        return ["row"] * state["rows"] if selector == ROW_SELECTOR else []
+
+    driver.on_click = on_click
+    driver.on_find_all_text = on_find_all_text
     return driver
 
 

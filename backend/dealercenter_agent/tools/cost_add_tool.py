@@ -299,14 +299,17 @@ class CostAddTool(Tool):
             target = _normalize_memo(memo)
             if any(_normalize_memo(m) == target for m in existing_memos if m.strip()):
                 return ToolResult(status=ToolStatus.EXISTS, data={"memo": memo})
-        else:
-            # Forcing the write path deliberately (manual testing only) —
-            # click Add New first so we fill a fresh, definitely-blank
-            # row instead of trusting whatever the default last row
-            # currently holds. Verify the click actually landed a new
-            # row (confirmed live 2026-11-18 that a single click can
-            # silently no-op) and retry rather than proceeding blind.
-            self._click_add_new_and_verify(driver)
+
+        # Always click Add New (with verification) before filling,
+        # regardless of skip_duplicate_check — confirmed live
+        # (2026-11-18) that "there's always a default blank row at the
+        # end" does NOT reliably hold: without this, the blank-row
+        # guard below caught the last memo-input row actually being a
+        # real, pre-existing invoice, not blank. Verify the click
+        # actually landed a new row (confirmed live 2026-11-18 that a
+        # single click can silently no-op) and retry rather than
+        # proceeding blind.
+        self._click_add_new_and_verify(driver)
 
         # Guard against writing into a row that already has data — relying
         # on "(//tr)[last()]" always being the fresh blank row is only as
@@ -384,9 +387,15 @@ class CostAddTool(Tool):
         # Close button's bounding box from ever settling long enough
         # for Playwright's plain click() stability wait, hanging 30s
         # with no actual blocking overlay involved this time.
-        driver.force_click(COST_ADDS_CLOSE_SELECTOR)
-        if driver.wait_visible(SAVE_CONFIRMATION_YES_SELECTOR, timeout_ms=5000):
-            driver.force_click(SAVE_CONFIRMATION_YES_SELECTOR)
+        #
+        # Only attempt this if the dialog is STILL open — confirmed
+        # live (2026-11-18) that the Save click can close the dialog
+        # on its own when it succeeds, in which case Close has nothing
+        # left to click and waiting on it hangs for the full timeout.
+        if driver.wait_visible(MODAL_OPEN_SELECTOR, timeout_ms=3000):
+            driver.force_click(COST_ADDS_CLOSE_SELECTOR)
+            if driver.wait_visible(SAVE_CONFIRMATION_YES_SELECTOR, timeout_ms=5000):
+                driver.force_click(SAVE_CONFIRMATION_YES_SELECTOR)
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
     def _click_add_new_and_verify(self, driver: BrowserDriver) -> None:
