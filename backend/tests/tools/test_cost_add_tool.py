@@ -37,6 +37,26 @@ def test_cost_add_fills_repair_row_and_saves(fake_driver_cost_add_vendor_found):
     assert SAVE_BUTTON_SELECTOR in driver.clicks
 
 
+def test_cost_add_auto_save_false_fills_everything_but_does_not_click_save(
+    fake_driver_cost_add_vendor_found,
+):
+    driver = fake_driver_cost_add_vendor_found
+    result = CostAddTool().run(
+        driver,
+        category="Repair",
+        cost=Decimal("270.00"),
+        invoice_date=date(2026, 11, 6),
+        vendor_name="Jensen Tire & Auto",
+        memo="276289",
+        auto_save=False,
+    )
+    assert result.status == ToolStatus.SUCCESS
+    assert result.data["auto_save"] is False
+    assert (NEW_ROW_CATEGORY_SELECTOR, "Repair") in driver.select_calls
+    assert driver.typed[NEW_ROW_MEMO_SELECTOR] == "276289"
+    assert SAVE_BUTTON_SELECTOR not in driver.clicks
+
+
 def test_cost_add_fills_other_row(fake_driver_cost_add_vendor_found):
     result = CostAddTool().run(
         fake_driver_cost_add_vendor_found,

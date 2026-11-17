@@ -233,6 +233,7 @@ class CostAddTool(Tool):
         vendor_name: str,
         memo: str,
         skip_duplicate_check: bool = False,
+        auto_save: bool = True,
         **kwargs,
     ) -> ToolResult:
         if category not in VALID_CATEGORIES:
@@ -306,6 +307,20 @@ class CostAddTool(Tool):
         # underlying reactive form control the way real keystrokes do.
         driver.type_text(NEW_ROW_MEMO_SELECTOR, memo)
 
+        data = {"category": category, "vendor": vendor_name}
+        if vendor_warning:
+            data["warnings"] = [vendor_warning]
+            print(f"[{self.name}] WARNING: {vendor_warning}")
+
+        if not auto_save:
+            # Debugging aid only (2026-11-18): every field is filled but
+            # Save is deliberately NOT clicked, so a human can click it
+            # themselves and inspect exactly what does/doesn't persist —
+            # isolates the row-filling logic from the intermittent
+            # silent-save-failure this flag exists to help diagnose.
+            data["auto_save"] = False
+            return ToolResult(status=ToolStatus.SUCCESS, data=data)
+
         # Confirmed live (2026-11-18): a human filling the same fields
         # by hand and clicking Save a moment later always persists
         # correctly; automation filling everything near-instantly and
@@ -321,11 +336,6 @@ class CostAddTool(Tool):
         # for 30s even with the button reported visible/enabled/stable
         # throughout. See BrowserDriver.force_click.
         driver.force_click(SAVE_BUTTON_SELECTOR)
-
-        data = {"category": category, "vendor": vendor_name}
-        if vendor_warning:
-            data["warnings"] = [vendor_warning]
-            print(f"[{self.name}] WARNING: {vendor_warning}")
         return ToolResult(status=ToolStatus.SUCCESS, data=data)
 
     def _click_add_new_and_verify(self, driver: BrowserDriver) -> None:

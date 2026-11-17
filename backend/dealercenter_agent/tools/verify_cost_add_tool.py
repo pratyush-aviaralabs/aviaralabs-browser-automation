@@ -69,6 +69,18 @@ class VerifyCostAddTool(Tool):
                 driver.click(COST_ADDS_CLOSE_SELECTOR)
                 time.sleep(VERIFY_RETRY_DELAY_SECONDS)
 
+        result = self._build_result(driver, memos, target, memo, expected_cost)
+        # Always leave the dialog closed, success or failure — confirmed
+        # live (2026-11-18) that leaving it open after the LAST attempt
+        # (previously only closed between retries) made the manual
+        # script's next CostAddTool call hang for 30s trying to reopen
+        # an already-open dialog.
+        driver.click(COST_ADDS_CLOSE_SELECTOR)
+        return result
+
+    def _build_result(
+        self, driver: BrowserDriver, memos: list[str], target: str, memo: str, expected_cost: Decimal
+    ) -> ToolResult:
         matches = [i for i, m in enumerate(memos) if _normalize_memo(m) == target]
         if not matches:
             return ToolResult(

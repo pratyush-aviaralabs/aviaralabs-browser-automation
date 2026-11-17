@@ -71,7 +71,8 @@ def test_verify_retries_the_reopen_cycle_until_the_row_shows_up(monkeypatch):
 
     result = VerifyCostAddTool().run(driver, memo="110011300", expected_cost=Decimal("119.12"))
     assert result.status == ToolStatus.SUCCESS
-    assert driver.clicks.count(COST_ADDS_CLOSE_SELECTOR) == 2  # closed before the 2nd and 3rd reopen
+    # Closed before the 2nd and 3rd reopen, plus once more unconditionally at the end.
+    assert driver.clicks.count(COST_ADDS_CLOSE_SELECTOR) == 3
 
 
 def test_verify_fails_when_cost_does_not_match():

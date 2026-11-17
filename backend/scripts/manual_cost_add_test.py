@@ -8,13 +8,22 @@ reason as every other manual_*.py script here.
 Flow: Login -> Search (inventory match only) -> CostAdd. No file upload.
 
 Usage:
-  venv/bin/python scripts/manual_cost_add_test.py <vin> <vendor_name> <invoice_number> <cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> [--skip-duplicate-check]
+  venv/bin/python scripts/manual_cost_add_test.py <vin> <vendor_name> <invoice_number> <cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> [--skip-duplicate-check] [--manual-save]
 
 --skip-duplicate-check forces the write path even when the memo already
 exists in the grid — deliberate, manual-testing-only bypass of
 CostAddTool's real duplicate-check (see cost_add_tool.py). Leaves a
 real extra row in the live account; delete it via its trash icon
 afterward.
+
+--manual-save fills every field (Category, Cost, Vendor, Date, Memo)
+but deliberately does NOT click Save — pauses so you can click it
+yourself and inspect exactly what does/doesn't persist. Debugging aid
+for the intermittent silent-save-failure confirmed live (2026-11-18):
+a human clicking Save a moment after filling fields by hand always
+persisted correctly, automation's near-instant fill+click intermittently
+didn't. Skips verification and the retry loop entirely — it's on you
+to check the result.
 """
 import json
 import os
@@ -53,12 +62,14 @@ def terminal_mfa_code_provider() -> str:
 def main():
     args = sys.argv[1:]
     skip_duplicate_check = "--skip-duplicate-check" in args
-    args = [a for a in args if a != "--skip-duplicate-check"]
+    manual_save = "--manual-save" in args
+    args = [a for a in args if a not in ("--skip-duplicate-check", "--manual-save")]
 
     if len(args) != 6:
         print(
             "usage: manual_cost_add_test.py <vin> <vendor_name> <invoice_number> "
-            "<cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> [--skip-duplicate-check]"
+            "<cost> <invoice_date:YYYY-MM-DD> <category:Repair|Other> "
+            "[--skip-duplicate-check] [--manual-save]"
         )
         return 2
     vin, vendor_name, invoice_number, cost_str, date_str, category = args
@@ -93,6 +104,22 @@ def main():
 
             if search_result.data["match_type"] != "inventory":
                 print("[!] Deal-path click-through isn't built yet — stopping here.")
+            elif manual_save:
+                cost_add_result = CostAddTool().run(
+                    driver,
+                    category=category,
+                    cost=cost,
+                    invoice_date=invoice_date,
+                    vendor_name=vendor_name,
+                    memo=invoice_number,
+                    skip_duplicate_check=skip_duplicate_check,
+                    auto_save=False,
+                )
+                print(f"[cost_add] {cost_add_result.status} data={cost_add_result.data}")
+                print(
+                    "[!] Every field is filled; Save was deliberately NOT clicked. "
+                    "Click it yourself now, then check which fields actually persisted."
+                )
             else:
                 for attempt in range(1, MAX_SAVE_ATTEMPTS + 1):
                     cost_add_result = CostAddTool().run(
