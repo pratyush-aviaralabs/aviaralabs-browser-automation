@@ -17,6 +17,8 @@ import os
 import queue
 import threading
 import time
+from datetime import date
+from decimal import Decimal
 from pathlib import Path
 from typing import Callable
 
@@ -24,13 +26,20 @@ from dotenv import load_dotenv
 
 from ..automation.playwright_driver import create_playwright_driver
 from ..tools.base import StepFailure, ToolStatus
+from ..tools.cost_add_tool import CostAddTool
 from ..tools.file_upload_tool import FileUploadTool
 from ..tools.login_tool import LoginTool
 from ..tools.search_invoice_tool import SearchInvoiceTool
+from ..tools.verify_cost_add_tool import VerifyCostAddTool
 from ..tools.verify_file_upload_tool import VerifyFileUploadTool
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 STATE_FILE = PROJECT_ROOT / ".auth_state.json"
+
+# Confirmed live (2026-11-18): a reported SUCCESS save can still
+# silently fail to persist server-side — retry the whole CostAddTool
+# write once more if verification fails, same as the manual scripts.
+MAX_SAVE_ATTEMPTS = 2
 
 # uvicorn starts as a fresh process with no .env loaded — unlike the
 # manual_*.py scripts, which each called this themselves, nothing else
@@ -188,8 +197,11 @@ def run_pipeline(
     *,
     vin: str | None,
     stock_number: str | None,
-    vendor_name: str,  # unused for now — needed again once the rename-after-upload step exists
+    vendor_name: str,
     invoice_number: str,
+    category: str,
+    cost: Decimal,
+    invoice_date: date,
     local_pdf_path: str,
     emit: EventSink,
     mfa_waiter: MfaWaiter,
@@ -215,14 +227,45 @@ def run_pipeline(
                     lambda: SearchInvoiceTool().run(driver, vin=vin, stock_number=stock_number),
                 )
 
-                if search_result is not None and search_result.data.get("match_type") != "inventory":
-                    _log(
-                        emit,
-                        "SearchInvoiceTool",
-                        "stopped",
-                        reason="Deal-path click-through isn't built yet",
-                    )
-                elif search_result is not None:
+                if search_result is not None:
+                    # Both Inventory and Deal matches proceed the same
+                    # way from here — confirmed live (2026-11-18) that
+                    # a Deal match's "Edit Vehicle" surface is
+                    # functionally identical to the Inventory page's
+                    # own vehicle detail view, and SearchInvoiceTool
+                    # already switched the driver into that iframe
+                    # context for a Deal match, so CostAddTool/
+                    # FileUploadTool work completely unchanged either way.
+                    for attempt in range(1, MAX_SAVE_ATTEMPTS + 1):
+                        cost_add_result = _run_step(
+                            emit,
+                            f"CostAddTool (attempt {attempt})",
+                            lambda: CostAddTool().run(
+                                driver,
+                                category=category,
+                                cost=cost,
+                                invoice_date=invoice_date,
+                                vendor_name=vendor_name,
+                                memo=invoice_number,
+                            ),
+                        )
+                        if cost_add_result is None or cost_add_result.status.name != "SUCCESS":
+                            break  # FAILED or EXISTS — nothing new was saved, don't retry
+
+                        # Don't trust CostAddTool's own SUCCESS —
+                        # confirmed live (2026-11-18) that a reported
+                        # SUCCESS save can still silently fail to
+                        # persist server-side.
+                        verify_cost_result = _run_step(
+                            emit,
+                            f"VerifyCostAddTool (attempt {attempt})",
+                            lambda: VerifyCostAddTool().run(
+                                driver, memo=invoice_number, expected_cost=cost
+                            ),
+                        )
+                        if verify_cost_result is not None and verify_cost_result.status.name == "SUCCESS":
+                            break
+
                     upload_result = _run_step(
                         emit,
                         "FileUploadTool",

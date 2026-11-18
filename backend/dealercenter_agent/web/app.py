@@ -8,6 +8,8 @@ import asyncio
 import queue
 import threading
 import uuid
+from datetime import datetime
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
@@ -86,6 +88,9 @@ async def start_run(
     stock_number: str = Form(""),
     vendor_name: str = Form(...),
     invoice_number: str = Form(...),
+    category: str = Form(...),
+    cost: str = Form(...),
+    invoice_date: str = Form(...),
     pdf: UploadFile = File(...),
 ):
     global _ACTIVE_RUN_ID
@@ -111,6 +116,9 @@ async def start_run(
             stock_number=stock_number or None,
             vendor_name=vendor_name,
             invoice_number=invoice_number,
+            category=category,
+            cost=Decimal(cost),
+            invoice_date=datetime.strptime(invoice_date, "%Y-%m-%d").date(),
             local_pdf_path=str(pdf_path),
             emit=lambda payload: _broadcast(run_id, payload),
             mfa_waiter=mfa_waiter,
