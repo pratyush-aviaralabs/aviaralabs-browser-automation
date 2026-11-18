@@ -1,0 +1,278 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <title>Browser Automation Agent — Invoices</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <script src="/loading.js"></script>
+</head>
+<body class="h-full">
+  <div class="sc-shell h-full">
+    <aside class="sc-sidebar">
+      <div class="sc-sidebar-brand">Browser Automation Agent</div>
+      <a href="/" class="sc-sidebar-link"><span class="num">1</span> Live Run</a>
+      <a href="/invoices.html" class="sc-sidebar-link active"><span class="num">2</span> Invoices</a>
+      <a href="/workflow-runs.html" class="sc-sidebar-link"><span class="num">3</span> Workflow Runs</a>
+      <a href="/schedulers.html" class="sc-sidebar-link"><span class="num">4</span> Schedulers</a>
+    </aside>
+
+    <main class="sc-main flex flex-col gap-5 h-full">
+      <div>
+        <div class="sc-page-title">Invoices</div>
+        <div class="sc-page-subtitle">Ingested invoices ready to run through the CostAdd pipeline.</div>
+      </div>
+
+      <div class="sc-card p-4">
+        <div class="sc-label mb-2">Ingestion webhook — share this URL with the sender; invoices POSTed here show up below</div>
+        <div class="flex items-center gap-2 mb-3">
+          <input id="webhook-url" readonly class="sc-input flex-1 font-mono text-xs">
+          <button id="copy-webhook-url" class="sc-btn sc-btn-secondary sc-btn-sm">Copy</button>
+          <!-- <button id="send-test-webhook" class="sc-btn sc-btn-primary sc-btn-sm whitespace-nowrap">Send test payload</button> -->
+        </div>
+        <!-- <div class="mt-3 pt-3" style="border-top: 1px solid hsl(var(--border));">
+          <div class="sc-label mb-2">Load test — fire many webhook deliveries back-to-back and watch the queue drain</div>
+          <div class="flex items-center gap-2 mb-3">
+            <label class="text-xs" style="color: hsl(var(--muted-foreground));">Count</label>
+            <input id="load-test-count" type="number" value="500" min="1" max="2000" class="sc-input w-20">
+            <label class="text-xs" style="color: hsl(var(--muted-foreground));">Concurrency</label>
+            <input id="load-test-concurrency" type="number" value="25" min="1" max="100" class="sc-input w-16">
+            <button id="start-load-test" class="sc-btn sc-btn-outline sc-btn-sm whitespace-nowrap">Start load test</button>
+          </div>
+          <pre id="load-test-progress" class="hidden text-xs overflow-auto max-h-40 whitespace-pre-wrap p-2 rounded" style="background: hsl(var(--secondary)/60%); border: 1px solid hsl(var(--border));"></pre>
+        </div> -->
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button id="run-selected" disabled class="sc-btn sc-btn-primary">Run selected (0)</button>
+        <span id="bulk-run-result" class="hidden text-xs" style="color: hsl(var(--muted-foreground));"></span>
+      </div>
+
+      <div class="sc-card sc-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th class="w-8"><input id="select-all" type="checkbox"></th>
+              <th>Invoice #</th>
+              <th>Vendor</th>
+              <th>VIN / Stock</th>
+              <th>Category</th>
+              <th>Cost</th>
+              <th>Invoice Date</th>
+              <th>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="invoice-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between text-sm">
+        <span id="page-info" style="color: hsl(var(--muted-foreground));"></span>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
+            <label for="page-size-select" class="text-xs" style="color: hsl(var(--muted-foreground));">Rows per page</label>
+            <select id="page-size-select" class="sc-select">
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50" selected>50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <button id="prev-page" class="sc-btn sc-btn-secondary sc-btn-sm" disabled>Prev</button>
+            <button id="next-page" class="sc-btn sc-btn-secondary sc-btn-sm" disabled>Next</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    let PAGE_SIZE = 50;
+    let currentPage = 1;
+
+    const rowsBody = document.getElementById('invoice-rows');
+    const pageInfo = document.getElementById('page-info');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const pageSizeSelect = document.getElementById('page-size-select');
+    const selectAllCheckbox = document.getElementById('select-all');
+    const runSelectedBtn = document.getElementById('run-selected');
+    const bulkRunResult = document.getElementById('bulk-run-result');
+    let currentPageItems = [];
+
+    const NOT_QUEUEABLE_STATUSES = new Set(['QUEUED', 'RUNNING']);
+    const selectedInvoiceIds = new Set();
+
+    const STATUS_BADGE = {
+      RECEIVED: 'sc-badge-muted',
+      INGESTING: 'sc-badge-info',
+      READY_FOR_PROCESSING: 'sc-badge-success',
+      QUEUED: 'sc-badge-info',
+      RUNNING: 'sc-badge-warning',
+      PROCESSED: 'sc-badge-success',
+      PROCESSED_BUT_NEED_TO_VALIDATE: 'sc-badge-warning',
+      FAILED: 'sc-badge-destructive',
+      FAILED_DATA_STORAGE: 'sc-badge-destructive',
+      FAILED_FILE_STORAGE: 'sc-badge-destructive',
+    };
+
+    function statusBadge(status) {
+      const cls = STATUS_BADGE[status] || 'sc-badge-muted';
+      return `<span class="sc-badge ${cls}">${status}</span>`;
+    }
+
+    // Only these have a terminal callback result to (re-)send —
+    // matches dealercenter_result_for_invoice on the backend.
+    const SYNCABLE_STATUSES = new Set([
+      'PROCESSED', 'PROCESSED_BUT_NEED_TO_VALIDATE', 'FAILED', 'FAILED_DATA_STORAGE', 'FAILED_FILE_STORAGE',
+    ]);
+
+    function renderRows(items) {
+      rowsBody.innerHTML = '';
+      for (const invoice of items) {
+        const row = document.createElement('tr');
+        row.className = 'clickable';
+        const queueable = !NOT_QUEUEABLE_STATUSES.has(invoice.status);
+        const checked = selectedInvoiceIds.has(invoice.id);
+        const syncable = SYNCABLE_STATUSES.has(invoice.status);
+        row.innerHTML = `
+          <td data-no-row-click>
+            <input type="checkbox" data-invoice-id="${invoice.id}"
+              ${checked ? 'checked' : ''} ${queueable ? '' : 'disabled'}>
+          </td>
+          <td class="font-medium">${invoice.invoice_number}</td>
+          <td>${invoice.vendor_name}</td>
+          <td style="color: hsl(var(--muted-foreground));">${invoice.vin || invoice.stock_number || ''}</td>
+          <td>${invoice.category}</td>
+          <td>$${invoice.grand_total.toFixed(2)}</td>
+          <td>${invoice.invoice_date}</td>
+          <td>${statusBadge(invoice.status)}</td>
+          <td class="text-xs">
+            <div class="flex items-center gap-2">
+              <span style="color: hsl(var(--info));">Use →</span>
+              <button type="button" data-no-row-click data-invoice-id="${invoice.id}"
+                class="sc-btn sc-btn-outline sc-btn-sm sync-callback-btn" ${syncable ? '' : 'disabled'}
+                title="${syncable ? 'Resend this invoice\'s current status to Aviara Connect' : 'No terminal result to sync yet'}">
+                Sync Aviara Connect
+              </button>
+            </div>
+          </td>
+        `;
+        row.addEventListener('click', (e) => {
+          if (e.target.closest('[data-no-row-click]')) return;
+          location.href = `/?invoice_id=${invoice.id}`;
+        });
+        row.querySelector('input[type=checkbox]').addEventListener('change', (e) => {
+          if (e.target.checked) selectedInvoiceIds.add(invoice.id);
+          else selectedInvoiceIds.delete(invoice.id);
+          updateRunSelectedButton();
+        });
+        rowsBody.appendChild(row);
+      }
+      selectAllCheckbox.checked = items.length > 0 && items.every(
+        (inv) => NOT_QUEUEABLE_STATUSES.has(inv.status) || selectedInvoiceIds.has(inv.id)
+      );
+    }
+
+    rowsBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.sync-callback-btn');
+      if (!btn || btn.disabled) return;
+      const invoiceId = btn.dataset.invoiceId;
+      const originalText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = 'Syncing…';
+      try {
+        const resp = await fetch(`/invoices/${invoiceId}/sync-callback`, { method: 'POST' });
+        const body = await resp.json().catch(() => ({}));
+        btn.textContent = resp.ok ? 'Synced ✓' : 'Sync failed';
+        btn.title = resp.ok ? `Sent status: ${body.status}` : (body.detail || 'Sync failed');
+      } catch (err) {
+        btn.textContent = 'Sync failed';
+        btn.title = String(err);
+      }
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }, 2500);
+    });
+
+    function updateRunSelectedButton() {
+      runSelectedBtn.textContent = `Run selected (${selectedInvoiceIds.size})`;
+      runSelectedBtn.disabled = selectedInvoiceIds.size === 0;
+    }
+
+    async function loadPage(page) {
+      const stopLoading = showTableLoading(rowsBody, 9);
+      const resp = await fetch(`/invoices?page=${page}&page_size=${PAGE_SIZE}`);
+      const data = await resp.json();
+      stopLoading();
+      currentPage = data.page;
+      currentPageItems = data.items;
+      renderRows(data.items);
+      updateRunSelectedButton();
+      const totalPages = Math.max(Math.ceil(data.total / data.page_size), 1);
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages} — ${data.total} invoices`;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+    }
+
+    pageSizeSelect.addEventListener('change', () => {
+      PAGE_SIZE = parseInt(pageSizeSelect.value, 10) || 50;
+      loadPage(1);
+    });
+
+    selectAllCheckbox.addEventListener('change', () => {
+      for (const invoice of currentPageItems) {
+        if (NOT_QUEUEABLE_STATUSES.has(invoice.status)) continue;
+        if (selectAllCheckbox.checked) selectedInvoiceIds.add(invoice.id);
+        else selectedInvoiceIds.delete(invoice.id);
+      }
+      renderRows(currentPageItems);
+      updateRunSelectedButton();
+    });
+
+    runSelectedBtn.addEventListener('click', async () => {
+      if (selectedInvoiceIds.size === 0) return;
+      runSelectedBtn.disabled = true;
+      const ids = Array.from(selectedInvoiceIds);
+      const resp = await fetch('/invoices/bulk-run', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoice_ids: ids }),
+      });
+      const body = await resp.json().catch(() => ({}));
+      if (resp.ok) {
+        const skippedNote = body.skipped.length
+          ? ` (${body.skipped.length} skipped: ${body.skipped.map((s) => `#${s.id} ${s.reason}`).join(', ')})`
+          : '';
+        bulkRunResult.textContent = `Queued ${body.queued.length} invoice(s)${skippedNote}`;
+      } else {
+        bulkRunResult.textContent = `Failed: HTTP ${resp.status} ${body.detail || ''}`;
+      }
+      bulkRunResult.classList.remove('hidden');
+      selectedInvoiceIds.clear();
+      await loadPage(currentPage);
+    });
+
+    prevBtn.addEventListener('click', () => loadPage(currentPage - 1));
+    nextBtn.addEventListener('click', () => loadPage(currentPage + 1));
+
+    const webhookUrlInput = document.getElementById('webhook-url');
+    const copyWebhookUrlBtn = document.getElementById('copy-webhook-url');
+
+    const WEBHOOK_URL = `${location.origin}/webhooks/invoices`;
+    webhookUrlInput.value = WEBHOOK_URL;
+
+    copyWebhookUrlBtn.addEventListener('click', async () => {
+      await navigator.clipboard.writeText(WEBHOOK_URL);
+      copyWebhookUrlBtn.textContent = 'Copied!';
+      setTimeout(() => { copyWebhookUrlBtn.textContent = 'Copy'; }, 1500);
+    });
+
+    loadPage(1);
+  </script>
+</body>
+</html>
