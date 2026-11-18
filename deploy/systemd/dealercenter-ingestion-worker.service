@@ -1,0 +1,22 @@
+[Unit]
+Description=DealerCenter Agent - invoice ingestion RQ worker
+After=network.target redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
+
+[Service]
+Type=simple
+User=dealercenter
+Group=dealercenter
+WorkingDirectory=/opt/dealercenter-agent/current/backend
+# Confirmed required (2026-11-18): run_worker.py doesn't self-insert
+# sys.path the way the manual_*.py scripts do — its own docstring says
+# it expects PYTHONPATH=. set externally. Inherited for free in dev
+# (start_app.py's children inherit the parent shell's PYTHONPATH), but
+# a systemd unit starts with no such inheritance.
+Environment=PYTHONPATH=/opt/dealercenter-agent/current/backend
+ExecStart=/opt/dealercenter-agent/current/backend/venv/bin/python scripts/run_worker.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

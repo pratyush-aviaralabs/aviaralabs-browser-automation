@@ -1,0 +1,18 @@
+[Unit]
+Description=DealerCenter Agent - workflow run RQ worker (runs the real browser pipeline)
+After=network.target redis-server.service postgresql.service
+Wants=redis-server.service postgresql.service
+
+[Service]
+Type=simple
+User=dealercenter
+Group=dealercenter
+WorkingDirectory=/opt/dealercenter-agent/current/backend
+# See dealercenter-ingestion-worker.service's comment — same reason.
+Environment=PYTHONPATH=/opt/dealercenter-agent/current/backend
+ExecStart=/opt/dealercenter-agent/current/backend/venv/bin/python scripts/run_workflow_worker.py
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

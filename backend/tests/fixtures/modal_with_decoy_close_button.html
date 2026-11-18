@@ -1,0 +1,28 @@
+<!doctype html>
+<html>
+<head><title>modal with decoy close button fixture</title></head>
+<body>
+  <!--
+    Reproduces a real bug (2026-11-18): DealerCenter's "Account
+    Security" MFA-mandate dialog has its own correctly-scoped Close
+    button (aria-label="Close", title="Close") inside the dialog's own
+    titlebar — but the page also has OTHER elements matching that same
+    generic selector elsewhere, always visible, unrelated to this
+    dialog. dismiss_blocking_modals() searching page-wide for
+    "button[aria-label='Close']" and taking .first could click that
+    unrelated decoy instead of the dialog's own close button, leaving
+    the real dialog open. window.__decoy_clicked__ tracks whether the
+    decoy ever got clicked — a correct implementation must close the
+    real dialog WITHOUT ever touching it.
+  -->
+  <button aria-label="Close" onclick="window.__decoy_clicked__ = true">decoy, not inside any dialog</button>
+
+  <div role="dialog" class="k-window k-dialog">
+    <div class="k-window-titlebar k-dialog-titlebar">
+      <span class="k-window-title k-dialog-title">Account Security</span>
+      <button aria-label="Close" title="Close" onclick="this.closest('[role=dialog]').remove()">&times;</button>
+    </div>
+    <div>Why you should always secure and protect your online account</div>
+  </div>
+</body>
+</html>

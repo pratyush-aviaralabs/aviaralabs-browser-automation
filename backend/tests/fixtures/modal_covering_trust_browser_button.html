@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head><title>trust-browser button covered by another dialog fixture</title></head>
+<body>
+  <!--
+    Reproduces a real bug (2026-11-18): the "trust this browser?"
+    button can be present and Playwright-visible while another dialog
+    (e.g. DealerCenter's "Account Security" MFA-mandate popup) is
+    rendered on top of it, physically intercepting pointer events. A
+    plain click() with no try/except then blocks for Playwright's full
+    default 30s timeout and raises ("subtree intercepts pointer
+    events"), propagating all the way up as an uncaught LoginTool
+    failure instead of being handled. This fixture positions a covering
+    dialog (with its own working close button) directly on top of the
+    trust-browser button, so a correct dismiss_blocking_modals() must
+    survive the failed click, close the covering dialog, then
+    successfully click trust-browser on a later round.
+  -->
+  <button
+    style="position: fixed; top: 100px; left: 100px; width: 200px; height: 40px; z-index: 1;"
+    onclick="window.__trusted__ = true; this.remove();"
+  >trust this browser</button>
+
+  <div
+    role="dialog"
+    class="k-window k-dialog"
+    style="position: fixed; top: 80px; left: 80px; width: 300px; height: 150px; z-index: 2; background: white; border: 1px solid black;"
+  >
+    <div class="k-window-titlebar k-dialog-titlebar">
+      <span class="k-window-title k-dialog-title">Account Security</span>
+      <button aria-label="Close" title="Close" onclick="this.closest('[role=dialog]').remove()">&times;</button>
+    </div>
+  </div>
+</body>
+</html>

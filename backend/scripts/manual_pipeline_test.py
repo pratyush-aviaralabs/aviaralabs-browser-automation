@@ -16,7 +16,6 @@ memo already exists in the Cost Adds grid — deliberate,
 manual-testing-only bypass (see cost_add_tool.py). Leaves a real extra
 row in the live account; delete it via its trash icon afterward.
 """
-import json
 import os
 import sys
 from datetime import datetime
@@ -28,6 +27,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
 
 from dealercenter_agent.automation.playwright_driver import create_playwright_driver
+from dealercenter_agent.automation.session_state import load_saved_state, save_state
 from dealercenter_agent.tools.base import StepFailure, ToolStatus
 from dealercenter_agent.tools.cost_add_tool import CostAddTool
 from dealercenter_agent.tools.file_upload_tool import FileUploadTool
@@ -73,7 +73,7 @@ def main():
             "entry to the live account if the invoice already exists there."
         )
 
-    saved_state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else None
+    saved_state = load_saved_state(STATE_FILE)
 
     with create_playwright_driver(headless=False, storage_state=saved_state) as driver:
         login_result = LoginTool().run(
@@ -83,7 +83,7 @@ def main():
             mfa_code_provider=terminal_mfa_code_provider,
         )
         print(f"[login] {login_result.status} reused_session={login_result.data.get('reused_session')}")
-        STATE_FILE.write_text(json.dumps(driver.save_session()))
+        save_state(STATE_FILE, driver.save_session())
 
         try:
             search_result = SearchInvoiceTool().run(driver, vin=vin, stock_number=None)

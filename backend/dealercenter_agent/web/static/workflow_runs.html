@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <title>Browser Automation Agent — Workflow Runs</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <script src="/loading.js"></script>
+</head>
+<body class="h-full">
+  <div class="sc-shell h-full">
+    <aside class="sc-sidebar">
+      <div class="sc-sidebar-brand">Browser Automation Agent</div>
+      <a href="/" class="sc-sidebar-link"><span class="num">1</span> Live Run</a>
+      <a href="/invoices.html" class="sc-sidebar-link"><span class="num">2</span> Invoices</a>
+      <a href="/workflow-runs.html" class="sc-sidebar-link active"><span class="num">3</span> Workflow Runs</a>
+      <a href="/schedulers.html" class="sc-sidebar-link"><span class="num">4</span> Schedulers</a>
+    </aside>
+
+    <main class="sc-main flex flex-col gap-5 h-full">
+      <div>
+        <div class="sc-page-title">Workflow Runs</div>
+        <div class="sc-page-subtitle">History of automation runs and their step-by-step traces.</div>
+      </div>
+
+      <div class="sc-card sc-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Invoice #</th>
+              <th>Workflow</th>
+              <th>Status</th>
+              <th>Started</th>
+              <th>Finished</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="run-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="flex items-center justify-between text-sm">
+        <span id="page-info" style="color: hsl(var(--muted-foreground));"></span>
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2">
+            <label for="page-size-select" class="text-xs" style="color: hsl(var(--muted-foreground));">Rows per page</label>
+            <select id="page-size-select" class="sc-select">
+              <option value="5" selected>5</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+            </select>
+          </div>
+          <div class="flex gap-2">
+            <button id="prev-page" class="sc-btn sc-btn-secondary sc-btn-sm" disabled>Prev</button>
+            <button id="next-page" class="sc-btn sc-btn-secondary sc-btn-sm" disabled>Next</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="detail-panel" class="hidden sc-card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div class="font-medium text-sm">
+            Run <span id="detail-run-id"></span> — invoice <span id="detail-invoice-number"></span>
+          </div>
+          <button id="close-detail" class="sc-btn sc-btn-secondary sc-btn-sm">Close ✕</button>
+        </div>
+        <div class="sc-table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Step</th>
+                <th>Tool</th>
+                <th>Status</th>
+                <th>Duration</th>
+                <th>Started</th>
+                <th>Details</th>
+              </tr>
+            </thead>
+            <tbody id="step-rows"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    let PAGE_SIZE = 5;
+    let currentPage = 1;
+
+    const runRows = document.getElementById('run-rows');
+    const pageInfo = document.getElementById('page-info');
+    const prevBtn = document.getElementById('prev-page');
+    const nextBtn = document.getElementById('next-page');
+    const pageSizeSelect = document.getElementById('page-size-select');
+    const detailPanel = document.getElementById('detail-panel');
+    const detailRunId = document.getElementById('detail-run-id');
+    const detailInvoiceNumber = document.getElementById('detail-invoice-number');
+    const stepRows = document.getElementById('step-rows');
+    const closeDetailBtn = document.getElementById('close-detail');
+
+    const STATUS_BADGE = {
+      success: 'sc-badge-success',
+      failed: 'sc-badge-destructive',
+      running: 'sc-badge-warning',
+      pending: 'sc-badge-muted',
+    };
+
+    function statusBadge(status) {
+      const cls = STATUS_BADGE[status] || 'sc-badge-muted';
+      return `<span class="sc-badge ${cls}">${status}</span>`;
+    }
+
+    function fmtTime(iso) {
+      return iso ? new Date(iso).toLocaleString() : '—';
+    }
+
+    // Surfaces whatever a tool step actually reported — the failure/verify
+    // reason (_RunTracker always writes this onto output_json.reason when
+    // present), plus a few other fields worth showing when there's no
+    // reason at all (e.g. CostAddTool's own vendor/category on success,
+    // the duplicate memo on an EXISTS, any non-fatal warnings).
+    function stepDetails(step) {
+      const output = step.output_json || {};
+      const parts = [];
+      if (output.reason) parts.push(output.reason);
+      if (step.status === 'exists' && output.memo) parts.push(`memo: ${output.memo}`);
+      if (output.uploaded_as) parts.push(`uploaded as: ${output.uploaded_as}`);
+      if (output.warnings && output.warnings.length) parts.push(`warning: ${output.warnings.join('; ')}`);
+      if (output.vendor) parts.push(`vendor: ${output.vendor}`);
+      return parts.length ? parts.join(' — ') : '—';
+    }
+
+    function renderRuns(items) {
+      runRows.innerHTML = '';
+      for (const run of items) {
+        const row = document.createElement('tr');
+        row.className = 'clickable';
+        row.innerHTML = `
+          <td class="font-medium">${run.invoice_number || '—'}</td>
+          <td>${run.workflow_name || '—'}</td>
+          <td>${statusBadge(run.status)}</td>
+          <td style="color: hsl(var(--muted-foreground));">${fmtTime(run.started_at)}</td>
+          <td style="color: hsl(var(--muted-foreground));">${fmtTime(run.finished_at)}</td>
+          <td class="text-xs" style="color: hsl(var(--info));">Show detail →</td>
+        `;
+        row.addEventListener('click', () => loadDetail(run.id));
+        runRows.appendChild(row);
+      }
+    }
+
+    async function loadPage(page) {
+      const stopLoading = showTableLoading(runRows, 6);
+      const resp = await fetch(`/workflow-runs?page=${page}&page_size=${PAGE_SIZE}`);
+      const data = await resp.json();
+      stopLoading();
+      currentPage = data.page;
+      renderRuns(data.items);
+      const totalPages = Math.max(Math.ceil(data.total / data.page_size), 1);
+      pageInfo.textContent = `Page ${currentPage} of ${totalPages} — ${data.total} runs`;
+      prevBtn.disabled = currentPage <= 1;
+      nextBtn.disabled = currentPage >= totalPages;
+    }
+
+    async function loadDetail(runId) {
+      detailPanel.classList.remove('hidden');
+      detailPanel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      const stopLoading = showTableLoading(stepRows, 6);
+      const resp = await fetch(`/workflow-runs/${runId}`);
+      if (!resp.ok) {
+        stopLoading();
+        stepRows.innerHTML = '<tr><td colspan="6">Could not load this run\'s steps.</td></tr>';
+        return;
+      }
+      const run = await resp.json();
+      stopLoading();
+      detailRunId.textContent = run.id;
+      detailInvoiceNumber.textContent = run.invoice_number || '—';
+      stepRows.innerHTML = '';
+      run.steps.forEach((step, i) => {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td style="color: hsl(var(--muted-foreground));">${i + 1}</td>
+          <td class="font-medium">${step.tool_name}</td>
+          <td>${statusBadge(step.status)}</td>
+          <td style="color: hsl(var(--muted-foreground));">${step.duration_ms} ms</td>
+          <td style="color: hsl(var(--muted-foreground));">${fmtTime(step.started_at)}</td>
+          <td class="text-xs" style="color: hsl(var(--muted-foreground));">${stepDetails(step)}</td>
+        `;
+        stepRows.appendChild(row);
+      });
+    }
+
+    pageSizeSelect.addEventListener('change', () => {
+      PAGE_SIZE = parseInt(pageSizeSelect.value, 10) || 5;
+      loadPage(1);
+    });
+
+    closeDetailBtn.addEventListener('click', () => detailPanel.classList.add('hidden'));
+    prevBtn.addEventListener('click', () => loadPage(currentPage - 1));
+    nextBtn.addEventListener('click', () => loadPage(currentPage + 1));
+
+    loadPage(1);
+  </script>
+</body>
+</html>

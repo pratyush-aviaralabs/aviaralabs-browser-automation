@@ -1,0 +1,18 @@
+[Unit]
+Description=DealerCenter Agent - web app (FastAPI/uvicorn)
+After=network.target postgresql.service redis-server.service
+Wants=postgresql.service redis-server.service
+
+[Service]
+Type=simple
+User=dealercenter
+Group=dealercenter
+WorkingDirectory=/opt/dealercenter-agent/current/backend
+ExecStart=/opt/dealercenter-agent/current/backend/venv/bin/python -m uvicorn dealercenter_agent.web.app:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+# journald captures stdout/stderr automatically — view with:
+#   journalctl -u dealercenter-web -f
+
+[Install]
+WantedBy=multi-user.target

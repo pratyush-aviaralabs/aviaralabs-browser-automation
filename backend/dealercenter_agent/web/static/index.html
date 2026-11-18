@@ -2,118 +2,156 @@
 <html lang="en" class="h-full">
 <head>
   <meta charset="utf-8">
-  <title>DealerCenter Agent — Live Run</title>
+  <title>Browser Automation Agent — Live Run</title>
   <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/theme.css">
 </head>
-<body class="h-full bg-gray-100 text-gray-900">
-  <div class="max-w-7xl mx-auto p-6 flex flex-col gap-6 h-full">
+<body class="h-full">
+  <div class="sc-shell h-full">
+    <aside class="sc-sidebar">
+      <div class="sc-sidebar-brand">Browser Automation Agent</div>
+      <a href="/" class="sc-sidebar-link active"><span class="num">1</span> Live Run</a>
+      <a href="/invoices.html" class="sc-sidebar-link"><span class="num">2</span> Invoices</a>
+      <a href="/workflow-runs.html" class="sc-sidebar-link"><span class="num">3</span> Workflow Runs</a>
+      <a href="/schedulers.html" class="sc-sidebar-link"><span class="num">4</span> Schedulers</a>
+    </aside>
 
-    <h1 class="text-xl font-semibold">DealerCenter Agent — Live Run</h1>
+    <main class="sc-main flex flex-col gap-5 h-full">
+      <div>
+        <div class="sc-page-title">Live Run</div>
+        <div class="sc-page-subtitle">Run the CostAdd pipeline for one invoice and watch it live.</div>
+      </div>
 
-    <form id="run-form" class="bg-white rounded-lg shadow p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">VIN</label>
-        <input name="vin" type="text" class="w-full border rounded px-2 py-1.5 text-sm" placeholder="Full VIN">
+      <div id="prefill-banner" class="hidden sc-card p-3 text-sm" style="background: hsl(var(--info)/8%); border-color: hsl(var(--info)/25%);">
+        Form populated from invoice <span id="prefill-invoice-number" class="font-medium"></span><span id="prefill-pdf-instruction"> — attach its PDF, then click Run.</span>
       </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Stock Number</label>
-        <input name="stock_number" type="text" class="w-full border rounded px-2 py-1.5 text-sm" placeholder="Stock #">
-      </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Vendor Name</label>
-        <input name="vendor_name" type="text" required class="w-full border rounded px-2 py-1.5 text-sm">
-      </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Invoice Number</label>
-        <input name="invoice_number" type="text" required class="w-full border rounded px-2 py-1.5 text-sm">
-      </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Category</label>
-        <select name="category" required class="w-full border rounded px-2 py-1.5 text-sm">
-          <option value="Repair">Repair</option>
-          <option value="Other">Other</option>
-        </select>
-      </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Cost</label>
-        <input name="cost" type="number" step="0.01" min="0" required class="w-full border rounded px-2 py-1.5 text-sm" placeholder="119.12">
-      </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Invoice Date</label>
-        <input name="invoice_date" type="date" required class="w-full border rounded px-2 py-1.5 text-sm">
-      </div>
-      <div class="col-span-2 md:col-span-1">
-        <label class="block text-xs font-medium text-gray-600 mb-1">Invoice PDF</label>
-        <input name="pdf" type="file" accept="application/pdf" required class="w-full text-sm">
-      </div>
-      <button type="submit"
-        class="col-span-2 md:col-span-1 bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-1.5 text-sm font-medium">
-        Run
-      </button>
-    </form>
 
-    <div class="flex items-center gap-3">
-      <button id="open-inspector"
-        class="bg-gray-800 hover:bg-gray-900 text-white rounded px-4 py-1.5 text-sm font-medium">
-        Open Inspector
-      </button>
-      <span class="text-xs text-gray-500">
-        Live, click-to-interact session with no automated steps. A pipeline Run also becomes
-        click-to-interact once it finishes — on whatever page it stopped on, success or failure.
-      </span>
-    </div>
-
-    <div id="mfa-box" class="hidden bg-amber-50 border border-amber-300 rounded-lg p-4 flex items-center gap-3">
-      <span class="text-sm font-medium text-amber-800">MFA code required:</span>
-      <input id="mfa-input" type="text" maxlength="6" class="border rounded px-2 py-1 text-sm w-28" placeholder="6-digit code">
-      <button id="mfa-submit" class="bg-amber-600 hover:bg-amber-700 text-white rounded px-3 py-1 text-sm">Submit</button>
-    </div>
-
-    <div class="grid grid-cols-2 gap-6 flex-1 min-h-0">
-      <div class="bg-white rounded-lg shadow flex flex-col min-h-0">
-        <div class="px-4 py-2 border-b font-medium text-sm text-gray-700">Workflow Execution</div>
-        <div id="log-panel" class="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs"></div>
-      </div>
-      <div class="bg-white rounded-lg shadow flex flex-col min-h-0">
-        <div class="px-4 py-2 border-b font-medium text-sm text-gray-700 flex items-center justify-between">
-          <span>Browser Output (live)</span>
-          <span id="inspector-hint" class="hidden text-xs font-normal text-gray-500">click to interact + inspect</span>
+      <form id="run-form" class="sc-card p-4 grid grid-cols-2 md:grid-cols-6 gap-3 items-end">
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label">VIN</label>
+          <input name="vin" type="text" class="sc-input w-full" placeholder="Full VIN">
         </div>
-        <div class="flex-1 overflow-hidden flex items-center justify-center bg-black">
-          <img id="screencast" class="max-w-full max-h-full cursor-crosshair" alt="waiting for browser...">
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label">Stock Number</label>
+          <input name="stock_number" type="text" class="sc-input w-full" placeholder="Stock #">
         </div>
-        <div id="type-box" class="hidden border-t p-2 flex gap-2">
-          <input id="type-input" type="text" class="flex-1 border rounded px-2 py-1 text-sm"
-            placeholder="Type into whatever's focused in the live view, then press Enter">
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label">Vendor Name</label>
+          <input name="vendor_name" type="text" required class="sc-input w-full">
+        </div>
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label flex items-center gap-1">
+            Memo
+            <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-white text-[9px] font-bold cursor-help" style="background: hsl(var(--muted-foreground));" title="Invoice Number">i</span>
+          </label>
+          <input name="invoice_number" type="text" required class="sc-input w-full">
+        </div>
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label">Category</label>
+          <select name="category" required class="sc-select w-full">
+            <option value="Repair">Repair</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label flex items-center gap-1">
+            Cost
+            <span class="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full text-white text-[9px] font-bold cursor-help" style="background: hsl(var(--muted-foreground));" title="Grand Total Amount">i</span>
+          </label>
+          <input name="cost" type="number" step="0.01" min="0" required class="sc-input w-full" placeholder="119.12">
+        </div>
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label">Invoice Date</label>
+          <input name="invoice_date" type="date" required class="sc-input w-full">
+        </div>
+        <div class="col-span-2 md:col-span-1">
+          <label class="sc-label">Invoice PDF</label>
+          <input id="pdf-input" name="pdf" type="file" accept="application/pdf" required class="w-full text-sm">
+          <input id="existing-pdf-path-input" name="existing_pdf_path" type="hidden" value="">
+          <div id="existing-pdf-note" class="hidden text-xs mt-1" style="color: hsl(var(--success));"></div>
+        </div>
+        <button type="submit" class="sc-btn sc-btn-primary col-span-2 md:col-span-1">Run</button>
+      </form>
+
+      <div class="flex items-center gap-3">
+        <button id="login-refresh" class="sc-btn sc-btn-outline">Login / Refresh Session</button>
+        <span class="text-xs" style="color: hsl(var(--muted-foreground));">
+          Logs in (handling MFA here, live) and saves the session the headless workflow queue reuses.
+          Run this whenever the queue starts failing with "session expired."
+        </span>
+      </div>
+
+      <div id="mfa-box" class="hidden sc-card p-4 flex items-center gap-3" style="background: hsl(var(--warning)/8%); border-color: hsl(var(--warning)/30%);">
+        <span class="text-sm font-medium" style="color: hsl(var(--warning));">MFA code required:</span>
+        <input id="mfa-input" type="text" maxlength="6" class="sc-input w-28" placeholder="6-digit code">
+        <button id="mfa-submit" class="sc-btn sc-btn-primary sc-btn-sm">Submit</button>
+      </div>
+
+      <div class="grid grid-cols-2 gap-5 flex-1 min-h-0">
+        <div class="sc-card flex flex-col min-h-0 overflow-hidden">
+          <div class="px-4 py-2.5 border-b text-sm font-medium" style="border-color: hsl(var(--border));">Workflow Execution</div>
+          <div id="log-panel" class="flex-1 overflow-y-auto p-3 space-y-1.5 font-mono text-xs">
+            <div id="log-empty" class="h-full flex flex-col items-center justify-center gap-2 font-sans" style="color: hsl(var(--muted-foreground));">
+              <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 2 2 4-4"/><path d="m3 7 2 2 4-4"/><path d="M13 6h8"/><path d="M13 12h8"/><path d="M13 18h8"/></svg>
+              <span class="text-xs">No activity yet — run a workflow to see live steps here</span>
+            </div>
+          </div>
+        </div>
+        <div class="sc-card flex flex-col min-h-0 overflow-hidden">
+          <div class="px-4 py-2.5 border-b text-sm font-medium flex items-center justify-between" style="border-color: hsl(var(--border));">
+            <span>Browser Output (live)</span>
+            <span id="inspector-hint" class="hidden text-xs font-normal" style="color: hsl(var(--muted-foreground));">click to interact + inspect</span>
+          </div>
+          <div class="flex-1 overflow-hidden flex items-center justify-center bg-black">
+            <div id="browser-empty" class="flex flex-col items-center gap-2" style="color: rgba(255,255,255,0.3);">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></svg>
+              <span class="text-xs">Waiting for browser session…</span>
+            </div>
+            <img id="screencast" class="hidden max-w-full max-h-full cursor-crosshair" alt="">
+          </div>
+          <div id="type-box" class="hidden border-t p-2 flex gap-2" style="border-color: hsl(var(--border));">
+            <input id="type-input" type="text" class="sc-input flex-1"
+              placeholder="Type into whatever's focused in the live view, then press Enter">
+          </div>
         </div>
       </div>
-    </div>
+    </main>
   </div>
 
   <script>
     const form = document.getElementById('run-form');
+    const prefillBanner = document.getElementById('prefill-banner');
+    const prefillInvoiceNumber = document.getElementById('prefill-invoice-number');
+    const prefillPdfInstruction = document.getElementById('prefill-pdf-instruction');
+    const pdfInput = document.getElementById('pdf-input');
+    const existingPdfPathInput = document.getElementById('existing-pdf-path-input');
+    const existingPdfNote = document.getElementById('existing-pdf-note');
     const logPanel = document.getElementById('log-panel');
     const screencast = document.getElementById('screencast');
+    const browserEmpty = document.getElementById('browser-empty');
+    const LOG_EMPTY_HTML = document.getElementById('log-empty').outerHTML;
     const mfaBox = document.getElementById('mfa-box');
     const mfaInput = document.getElementById('mfa-input');
     const mfaSubmit = document.getElementById('mfa-submit');
-    const openInspectorBtn = document.getElementById('open-inspector');
+    const loginRefreshBtn = document.getElementById('login-refresh');
     const inspectorHint = document.getElementById('inspector-hint');
     const typeBox = document.getElementById('type-box');
     const typeInput = document.getElementById('type-input');
     let ws = null;
 
-    const STATUS_COLOR = {
-      success: 'text-green-700 bg-green-50',
-      exists: 'text-blue-700 bg-blue-50',
-      failed: 'text-red-700 bg-red-50',
-      stopped: 'text-amber-700 bg-amber-50',
+    const STATUS_BADGE = {
+      success: 'sc-badge-success',
+      exists: 'sc-badge-info',
+      failed: 'sc-badge-destructive',
+      stopped: 'sc-badge-warning',
     };
 
     function appendLog(entry) {
+      const emptyState = document.getElementById('log-empty');
+      if (emptyState) emptyState.remove();
       const row = document.createElement('div');
-      const color = STATUS_COLOR[entry.status] || 'text-gray-700 bg-gray-50';
-      row.className = `rounded px-2 py-1.5 ${color}`;
+      row.className = 'rounded px-2.5 py-1.5 flex items-start gap-2';
+      row.style.background = 'hsl(var(--secondary)/60%)';
       const time = new Date(entry.ts * 1000).toLocaleTimeString();
       let detail = '';
       if (entry.data && Object.keys(entry.data).length) {
@@ -122,14 +160,19 @@
       if (entry.reason) {
         detail += ` — ${entry.reason}`;
       }
-      row.textContent = `[${time}] ${entry.tool}: ${entry.status}${detail}`;
+      const badgeClass = STATUS_BADGE[entry.status] || 'sc-badge-muted';
+      row.innerHTML = `<span class="sc-badge ${badgeClass}">${entry.status}</span><span>[${time}] ${entry.tool}${detail}</span>`;
       logPanel.appendChild(row);
       logPanel.scrollTop = logPanel.scrollHeight;
     }
 
     function appendInspectResult(outerHtml) {
+      const emptyState = document.getElementById('log-empty');
+      if (emptyState) emptyState.remove();
       const row = document.createElement('div');
-      row.className = 'rounded px-2 py-1.5 bg-indigo-50 text-indigo-800';
+      row.className = 'rounded px-2.5 py-1.5';
+      row.style.background = 'hsl(var(--info)/8%)';
+      row.style.color = 'hsl(var(--info))';
       const time = new Date().toLocaleTimeString();
       const label = document.createElement('div');
       label.textContent = `[${time}] Inspector: clicked element's outerHTML`;
@@ -151,6 +194,8 @@
           appendLog(msg);
         } else if (msg.type === 'frame') {
           screencast.src = `data:image/jpeg;base64,${msg.data}`;
+          screencast.classList.remove('hidden');
+          browserEmpty.classList.add('hidden');
         } else if (msg.type === 'mfa_required') {
           mfaBox.classList.remove('hidden');
           mfaInput.focus();
@@ -177,7 +222,10 @@
         ws.close();
         ws = null;
       }
-      logPanel.innerHTML = '';
+      logPanel.innerHTML = LOG_EMPTY_HTML;
+      screencast.src = '';
+      screencast.classList.add('hidden');
+      browserEmpty.classList.remove('hidden');
       mfaBox.classList.add('hidden');
       inspectorHint.classList.add('hidden');
       typeBox.classList.add('hidden');
@@ -200,13 +248,48 @@
       wireSocket(run_id);
     }
 
+    // Picked a row on the Invoices table -> ?invoice_id=<id> here. The
+    // file *input* is deliberately left alone — browsers won't let JS
+    // set it to a real file — but when that invoice's PDF was already
+    // downloaded by ingestion (local_pdf_path set), there's no reason
+    // to make the user re-pick it: send the server-side path instead
+    // and drop the "required" on the file input so Run doesn't block
+    // on it. Picking a file manually still overrides this, since the
+    // backend prefers an uploaded pdf over existing_pdf_path.
+    async function prefillFromQueryString() {
+      const invoiceId = new URLSearchParams(location.search).get('invoice_id');
+      if (!invoiceId) return;
+      const resp = await fetch(`/invoices/${invoiceId}`);
+      if (!resp.ok) return;
+      const invoice = await resp.json();
+      form.elements.namedItem('vin').value = invoice.vin || '';
+      form.elements.namedItem('stock_number').value = invoice.stock_number || '';
+      form.elements.namedItem('vendor_name').value = invoice.vendor_name;
+      form.elements.namedItem('invoice_number').value = invoice.invoice_number;
+      form.elements.namedItem('category').value = invoice.category;
+      form.elements.namedItem('cost').value = invoice.grand_total;
+      form.elements.namedItem('invoice_date').value = invoice.invoice_date;
+      prefillInvoiceNumber.textContent = invoice.invoice_number;
+      prefillBanner.classList.remove('hidden');
+
+      if (invoice.local_pdf_path) {
+        const filename = invoice.local_pdf_path.split('/').pop();
+        existingPdfPathInput.value = invoice.local_pdf_path;
+        pdfInput.required = false;
+        prefillPdfInstruction.textContent = ' — click Run.';
+        existingPdfNote.textContent = `✓ Using already-downloaded file: ${filename} (pick a different one to override)`;
+        existingPdfNote.classList.remove('hidden');
+      }
+    }
+    prefillFromQueryString();
+
     form.addEventListener('submit', (e) => {
       e.preventDefault();
       startSession('/run', { method: 'POST', body: new FormData(form) });
     });
 
-    openInspectorBtn.addEventListener('click', () => {
-      startSession('/inspect/start', { method: 'POST' });
+    loginRefreshBtn.addEventListener('click', () => {
+      startSession('/login/refresh', { method: 'POST' });
     });
 
     // Maps a click on the (possibly CSS-scaled) screencast image back to

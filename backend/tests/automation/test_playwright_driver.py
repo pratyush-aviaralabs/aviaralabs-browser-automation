@@ -33,6 +33,26 @@ def test_dismiss_blocking_modals_accepts_trust_browser_and_clears_overlay(
     assert driver.wait_visible(".k-overlay", timeout_ms=500) is False
 
 
+def test_dismiss_blocking_modals_scopes_close_button_to_the_visible_dialog(
+    playwright_page, modal_with_decoy_close_button_fixture_url
+):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(modal_with_decoy_close_button_fixture_url)
+    driver.dismiss_blocking_modals()
+    assert driver.wait_visible("[role='dialog']", timeout_ms=500) is False
+    assert playwright_page.evaluate("window.__decoy_clicked__") is not True
+
+
+def test_dismiss_blocking_modals_survives_trust_browser_button_covered_by_another_dialog(
+    playwright_page, modal_covering_trust_browser_button_fixture_url
+):
+    driver = PlaywrightDriver(playwright_page)
+    driver.goto(modal_covering_trust_browser_button_fixture_url)
+    driver.dismiss_blocking_modals()  # must not raise
+    assert driver.wait_visible("[role='dialog']", timeout_ms=500) is False
+    assert playwright_page.evaluate("window.__trusted__") is True
+
+
 def test_save_session_returns_storage_state_dict(playwright_page, login_form_fixture_url):
     driver = PlaywrightDriver(playwright_page)
     driver.goto(login_form_fixture_url)

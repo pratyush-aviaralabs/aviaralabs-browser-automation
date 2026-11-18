@@ -12,7 +12,6 @@ version of this did) throws away the exact page a human needs to look at
 to find the real selector. Now the failure state IS the inspectable
 state — no separate Inspector session needed to see what went wrong."""
 
-import json
 import os
 import queue
 import threading
@@ -25,6 +24,8 @@ from typing import Callable
 from dotenv import load_dotenv
 
 from ..automation.playwright_driver import create_playwright_driver
+from ..automation.session_state import load_saved_state, save_state
+from ..queue.session_lock import release_session_lock, try_acquire_session_lock
 from ..tools.base import StepFailure, ToolStatus
 from ..tools.cost_add_tool import CostAddTool
 from ..tools.file_upload_tool import FileUploadTool
@@ -74,13 +75,11 @@ class MfaWaiter:
 
 
 def _load_saved_state() -> dict | None:
-    if STATE_FILE.exists():
-        return json.loads(STATE_FILE.read_text())
-    return None
+    return load_saved_state(STATE_FILE)
 
 
 def _save_state(state: dict) -> None:
-    STATE_FILE.write_text(json.dumps(state))
+    save_state(STATE_FILE, state)
 
 
 def _start_screencast(page, emit: EventSink):
@@ -208,104 +207,158 @@ def run_pipeline(
     commands: "queue.Queue[dict]",
     stop_event: threading.Event,
 ) -> None:
-    with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
-        try:
-            cdp = _start_screencast(driver.page, emit)
-        except Exception as exc:
-            # No CDP session to hand to the interactive loop — this is
-            # the one failure mode that genuinely can't stay open for
-            # inspection, since there's no screencast to show.
-            _log(emit, "ScreencastSetup", "failed", reason=str(exc))
-            emit({"type": "done"})
-            return
+    # Cross-process guard — confirmed required (2026-11-18): a future
+    # headless workflow-run worker (separate process) opens real
+    # DealerCenter sessions too, and the in-memory _ACTIVE_RUN_ID check
+    # in app.py only protects against collisions within this one
+    # process. This Redis-backed lock is the one both sides can see.
+    lock_token = try_acquire_session_lock()
+    if lock_token is None:
+        _log(emit, "SessionLock", "failed", reason="another DealerCenter session is already active")
+        emit({"type": "done"})
+        return
 
-        try:
-            if _login(driver, emit, mfa_waiter):
-                search_result = _run_step(
-                    emit,
-                    "SearchInvoiceTool",
-                    lambda: SearchInvoiceTool().run(driver, vin=vin, stock_number=stock_number),
-                )
+    try:
+        with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
+            try:
+                cdp = _start_screencast(driver.page, emit)
+            except Exception as exc:
+                # No CDP session to hand to the interactive loop — this is
+                # the one failure mode that genuinely can't stay open for
+                # inspection, since there's no screencast to show.
+                _log(emit, "ScreencastSetup", "failed", reason=str(exc))
+                emit({"type": "done"})
+                return
 
-                if search_result is not None:
-                    # Both Inventory and Deal matches proceed the same
-                    # way from here — confirmed live (2026-11-18) that
-                    # a Deal match's "Edit Vehicle" surface is
-                    # functionally identical to the Inventory page's
-                    # own vehicle detail view, and SearchInvoiceTool
-                    # already switched the driver into that iframe
-                    # context for a Deal match, so CostAddTool/
-                    # FileUploadTool work completely unchanged either way.
-                    for attempt in range(1, MAX_SAVE_ATTEMPTS + 1):
-                        cost_add_result = _run_step(
-                            emit,
-                            f"CostAddTool (attempt {attempt})",
-                            lambda: CostAddTool().run(
-                                driver,
-                                category=category,
-                                cost=cost,
-                                invoice_date=invoice_date,
-                                vendor_name=vendor_name,
-                                memo=invoice_number,
-                            ),
-                        )
-                        if cost_add_result is None or cost_add_result.status.name != "SUCCESS":
-                            break  # FAILED or EXISTS — nothing new was saved, don't retry
-
-                        # Don't trust CostAddTool's own SUCCESS —
-                        # confirmed live (2026-11-18) that a reported
-                        # SUCCESS save can still silently fail to
-                        # persist server-side.
-                        verify_cost_result = _run_step(
-                            emit,
-                            f"VerifyCostAddTool (attempt {attempt})",
-                            lambda: VerifyCostAddTool().run(
-                                driver, memo=invoice_number, expected_cost=cost
-                            ),
-                        )
-                        if verify_cost_result is not None and verify_cost_result.status.name == "SUCCESS":
-                            break
-
-                    upload_result = _run_step(
+            try:
+                if _login(driver, emit, mfa_waiter):
+                    search_result = _run_step(
                         emit,
-                        "FileUploadTool",
-                        lambda: FileUploadTool().run(
-                            driver,
-                            local_pdf_path=local_pdf_path,
-                            invoice_number=invoice_number,
-                        ),
+                        "SearchInvoiceTool",
+                        lambda: SearchInvoiceTool().run(driver, vin=vin, stock_number=stock_number),
                     )
 
-                    if upload_result is not None and upload_result.status == ToolStatus.SUCCESS:
-                        uploaded_as = upload_result.data["uploaded_as"]
-                        _run_step(
-                            emit,
-                            "VerifyFileUploadTool",
-                            lambda: VerifyFileUploadTool().run(driver, file_name=uploaded_as),
-                        )
-        except Exception as exc:
-            # Belt-and-suspenders: _run_step already catches every
-            # per-tool failure, so reaching here means a bug in this
-            # glue code itself, not a tool. Still must not skip the
-            # interactive loop below.
-            _log(emit, "Pipeline", "failed", reason=f"unexpected error: {exc}")
+                    if search_result is not None:
+                        # Both Inventory and Deal matches proceed the same
+                        # way from here — confirmed live (2026-11-18) that
+                        # a Deal match's "Edit Vehicle" surface is
+                        # functionally identical to the Inventory page's
+                        # own vehicle detail view, and SearchInvoiceTool
+                        # already switched the driver into that iframe
+                        # context for a Deal match, so CostAddTool/
+                        # FileUploadTool work completely unchanged either way.
+                        for attempt in range(1, MAX_SAVE_ATTEMPTS + 1):
+                            cost_add_result = _run_step(
+                                emit,
+                                f"CostAddTool (attempt {attempt})",
+                                lambda: CostAddTool().run(
+                                    driver,
+                                    category=category,
+                                    cost=cost,
+                                    invoice_date=invoice_date,
+                                    vendor_name=vendor_name,
+                                    memo=invoice_number,
+                                ),
+                            )
+                            if cost_add_result is None or cost_add_result.status.name != "SUCCESS":
+                                break  # FAILED or EXISTS — nothing new was saved, don't retry
 
-        emit({"type": "done"})
-        # Stay open on whatever page the run ended on — success or
-        # failure — so a human can click to interact/inspect right there,
-        # instead of the browser closing and a separate Inspector session
-        # having to start over unauthenticated from the login page.
-        _interactive_loop(cdp, emit, commands, stop_event)
+                            # Don't trust CostAddTool's own SUCCESS —
+                            # confirmed live (2026-11-18) that a reported
+                            # SUCCESS save can still silently fail to
+                            # persist server-side.
+                            verify_cost_result = _run_step(
+                                emit,
+                                f"VerifyCostAddTool (attempt {attempt})",
+                                lambda: VerifyCostAddTool().run(
+                                    driver, memo=invoice_number, expected_cost=cost
+                                ),
+                            )
+                            if verify_cost_result is not None and verify_cost_result.status.name == "SUCCESS":
+                                break
+
+                        upload_result = _run_step(
+                            emit,
+                            "FileUploadTool",
+                            lambda: FileUploadTool().run(
+                                driver,
+                                local_pdf_path=local_pdf_path,
+                                invoice_number=invoice_number,
+                            ),
+                        )
+
+                        if upload_result is not None and upload_result.status == ToolStatus.SUCCESS:
+                            uploaded_as = upload_result.data["uploaded_as"]
+                            _run_step(
+                                emit,
+                                "VerifyFileUploadTool",
+                                lambda: VerifyFileUploadTool().run(driver, file_name=uploaded_as),
+                            )
+            except Exception as exc:
+                # Belt-and-suspenders: _run_step already catches every
+                # per-tool failure, so reaching here means a bug in this
+                # glue code itself, not a tool. Still must not skip the
+                # interactive loop below.
+                _log(emit, "Pipeline", "failed", reason=f"unexpected error: {exc}")
+
+            emit({"type": "done"})
+            # Stay open on whatever page the run ended on — success or
+            # failure — so a human can click to interact/inspect right there,
+            # instead of the browser closing and a separate Inspector session
+            # having to start over unauthenticated from the login page.
+            _interactive_loop(cdp, emit, commands, stop_event)
+    finally:
+        release_session_lock(lock_token)
 
 
 def run_inspector_session(
-    emit: EventSink, commands: "queue.Queue[dict]", stop_event: threading.Event
+    emit: EventSink,
+    mfa_waiter: MfaWaiter,
+    commands: "queue.Queue[dict]",
+    stop_event: threading.Event,
 ) -> None:
     """Ad-hoc session with no automated steps — logs in (reusing the
     saved session if valid) and then goes straight into the same
-    interactive loop run_pipeline ends with."""
-    mfa_waiter = MfaWaiter(emit)
-    with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
-        cdp = _start_screencast(driver.page, emit)
-        _login(driver, emit, mfa_waiter)  # LoginTool already lands on the dashboard
-        _interactive_loop(cdp, emit, commands, stop_event)
+    interactive loop run_pipeline ends with.
+
+    mfa_waiter is now passed in rather than created here — confirmed a
+    real bug (2026-11-18): app.py never wired this function's own
+    internally-created waiter into RunState.mfa_waiter, so a submitted
+    MFA code during an Inspector session had nowhere to go. Taking it
+    as a parameter, same as run_pipeline, lets the caller register it
+    before start."""
+    lock_token = try_acquire_session_lock()
+    if lock_token is None:
+        _log(emit, "SessionLock", "failed", reason="another DealerCenter session is already active")
+        emit({"type": "done"})
+        return
+
+    try:
+        with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
+            cdp = _start_screencast(driver.page, emit)
+            _login(driver, emit, mfa_waiter)  # LoginTool already lands on the dashboard
+            _interactive_loop(cdp, emit, commands, stop_event)
+    finally:
+        release_session_lock(lock_token)
+
+
+def run_login_refresh_session(emit: EventSink, mfa_waiter: MfaWaiter) -> None:
+    """Login-only — no search/cost-add/upload, no interactive loop
+    afterward. Purpose: refresh .auth_state.json (handling MFA live,
+    with a human watching) so the headless workflow-run queue — which
+    can never handle an MFA challenge, since nobody's there to answer
+    it — has a valid session to load. Closes the browser the moment
+    login finishes, success or failure."""
+    lock_token = try_acquire_session_lock()
+    if lock_token is None:
+        _log(emit, "SessionLock", "failed", reason="another DealerCenter session is already active")
+        emit({"type": "done"})
+        return
+
+    try:
+        with create_playwright_driver(headless=True, storage_state=_load_saved_state()) as driver:
+            _start_screencast(driver.page, emit)  # so MFA entry is visible live
+            _login(driver, emit, mfa_waiter)
+            emit({"type": "done"})
+    finally:
+        release_session_lock(lock_token)

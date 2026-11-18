@@ -10,7 +10,6 @@ Usage:
 Reuses the same .auth_state.json the POC script already proved works, so
 if that session is still valid this should skip straight past login/MFA.
 """
-import json
 import os
 import sys
 from pathlib import Path
@@ -20,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from dotenv import load_dotenv
 
 from dealercenter_agent.automation.playwright_driver import create_playwright_driver
+from dealercenter_agent.automation.session_state import load_saved_state, save_state
 from dealercenter_agent.tools.login_tool import LoginTool
 from dealercenter_agent.tools.search_invoice_tool import (
     SEARCH_BOX_SELECTOR,
@@ -44,7 +44,7 @@ def main():
         return 1
     query = sys.argv[1]
 
-    saved_state = json.loads(STATE_FILE.read_text()) if STATE_FILE.exists() else None
+    saved_state = load_saved_state(STATE_FILE)
 
     with create_playwright_driver(headless=False, storage_state=saved_state) as driver:
         login_result = LoginTool().run(
@@ -55,8 +55,10 @@ def main():
         )
         print(f"[login] {login_result.status} reused_session={login_result.data.get('reused_session')}")
 
-        # Re-save the session so next manual run can reuse it too.
-        STATE_FILE.write_text(json.dumps(driver.save_session()))
+        # Re-save the session so next manual run can reuse it too —
+        # creates .auth_state.json if it didn't exist yet, overwrites
+        # it (with a fresh session) if it did.
+        save_state(STATE_FILE, driver.save_session())
 
         # Catches everything, not just StepFailure — a raw Playwright
         # error here must not close the browser before you get a chance

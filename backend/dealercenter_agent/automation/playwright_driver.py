@@ -16,7 +16,7 @@ MODAL_CLOSE_SELECTORS = (
     ".k-window-titlebar .k-button, button[aria-label='Close'], "
     "button[title='Close']"
 )
-MODAL_CONTAINER_SELECTOR = "[role='dialog'], .k-dialog, .k-window"
+MODAL_CONTAINER_SELECTOR = "[role='dialog']:visible, .k-dialog:visible, .k-window:visible"
 TRUST_BROWSER_BUTTON_SELECTOR = "button:has-text('trust this browser')"
 
 
@@ -131,24 +131,53 @@ class PlaywrightDriver(BrowserDriver):
 
     def dismiss_blocking_modals(self, max_rounds: int = 5) -> None:
         for _ in range(max_rounds):
-            trust_btn = self.page.locator(TRUST_BROWSER_BUTTON_SELECTOR).first
+            # Confirmed live (2026-11-18): this button can report
+            # "visible" while something else (e.g. the Account Security
+            # dialog, rendered on top of it) physically covers it —
+            # Playwright's click() then retries for its full default
+            # 30s timeout and raises ("subtree intercepts pointer
+            # events"), which propagated all the way up as an uncaught
+            # LoginTool failure instead of being handled here. Caught
+            # now, with a short explicit timeout instead of the 30s
+            # default, falling through to the modal-closing logic below
+            # in the SAME round — whatever is covering it is very
+            # likely itself a [role='dialog'] that code already closes,
+            # so a later round's click should land cleanly.
             if self.wait_visible(TRUST_BROWSER_BUTTON_SELECTOR, 2500):
-                trust_btn.click()
-                self.page.wait_for_timeout(1000)
-                continue
-
-            modal = self.page.locator(MODAL_CONTAINER_SELECTOR).first
-            if not self.wait_visible(MODAL_CONTAINER_SELECTOR, 2500):
-                break
-
-            closed = False
-            close_btn = self.page.locator(MODAL_CLOSE_SELECTORS).first
-            if self.wait_visible(MODAL_CLOSE_SELECTORS, 1500):
                 try:
-                    close_btn.click(timeout=2000)
-                    closed = True
+                    self.page.locator(TRUST_BROWSER_BUTTON_SELECTOR).first.click(timeout=3000)
+                    self.page.wait_for_timeout(1000)
+                    continue
                 except Exception:
                     pass
+
+            if not self.wait_visible(MODAL_CONTAINER_SELECTOR, 2500):
+                break
+            modal = self.page.locator(MODAL_CONTAINER_SELECTOR).first
+
+            # Confirmed live (2026-11-18): DealerCenter's "Account
+            # Security" MFA-mandate dialog's own Close button DOES match
+            # MODAL_CLOSE_SELECTORS (aria-label="Close", title="Close")
+            # — but searching the whole page for that selector and
+            # taking .first is wrong, the same bug class as the Cost
+            # Adds/vendor-dialog scoping issues elsewhere in this file.
+            # The DOM can hold multiple dialog-shaped elements at once
+            # (Angular/Kendo leaves stale/hidden ones around — confirmed
+            # live: 2 [role='dialog'] + 17 [class*='dialog'] elements
+            # present simultaneously), so a page-wide .first can resolve
+            # to an unrelated close button elsewhere, click it
+            # successfully, and leave THIS modal open while the loop
+            # thinks it worked. Scoping to the already-identified
+            # visible `modal` locator finds that dialog's OWN close
+            # button specifically.
+            closed = False
+            close_btn = modal.locator(MODAL_CLOSE_SELECTORS).first
+            try:
+                close_btn.wait_for(state="visible", timeout=1500)
+                close_btn.click(timeout=2000)
+                closed = True
+            except Exception:
+                pass
 
             if not closed:
                 self.page.keyboard.press("Escape")

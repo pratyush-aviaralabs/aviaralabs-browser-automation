@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="utf-8">
+  <title>Browser Automation Agent — Schedulers</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/theme.css">
+  <script src="/loading.js"></script>
+</head>
+<body class="h-full">
+  <div class="sc-shell h-full">
+    <aside class="sc-sidebar">
+      <div class="sc-sidebar-brand">Browser Automation Agent</div>
+      <a href="/" class="sc-sidebar-link"><span class="num">1</span> Live Run</a>
+      <a href="/invoices.html" class="sc-sidebar-link"><span class="num">2</span> Invoices</a>
+      <a href="/workflow-runs.html" class="sc-sidebar-link"><span class="num">3</span> Workflow Runs</a>
+      <a href="/schedulers.html" class="sc-sidebar-link active"><span class="num">4</span> Schedulers</a>
+    </aside>
+
+    <main class="sc-main flex flex-col gap-5 h-full">
+      <div>
+        <div class="sc-page-title">Schedulers</div>
+        <div class="sc-page-subtitle">Recurring rules that pick up invoices in a given status and queue them for a run.</div>
+      </div>
+
+      <div class="sc-card p-4">
+        <div class="sc-label mb-3">New scheduler</div>
+
+        <form id="scheduler-form" class="flex flex-col gap-3">
+          <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div>
+              <label class="sc-label">Name</label>
+              <input name="name" type="text" required placeholder="e.g. Morning batch" class="sc-input w-full">
+            </div>
+            <div>
+              <label class="sc-label">Frequency</label>
+              <select id="frequency-unit" name="frequency_unit" class="sc-select w-full">
+                <option value="HOUR">Hourly</option>
+                <option value="DAY" selected>Daily</option>
+                <option value="WEEK">Weekly</option>
+                <option value="MONTH">Monthly</option>
+              </select>
+            </div>
+            <div>
+              <label class="sc-label">Target status</label>
+              <select name="target_status" class="sc-select w-full">
+                <option value="READY_FOR_PROCESSING">Ready for processing</option>
+                <option value="FAILED">Failed</option>
+                <option value="PROCESSED_BUT_NEED_TO_VALIDATE">Needs validation</option>
+              </select>
+            </div>
+            <div>
+              <label class="sc-label">Timezone</label>
+              <select id="timezone-select" name="timezone" class="sc-select w-full"></select>
+            </div>
+          </div>
+
+          <div>
+            <div class="flex items-center justify-between mb-1">
+              <label class="sc-label mb-0">
+                Occurrences — how many times it fires (once/twice/thrice/...), and exactly when
+              </label>
+              <button type="button" id="add-occurrence" class="sc-btn sc-btn-outline sc-btn-sm">+ Add occurrence</button>
+            </div>
+            <div id="occurrence-rows" class="flex flex-col gap-2"></div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <button type="submit" class="sc-btn sc-btn-primary">Create scheduler</button>
+            <span id="form-error" class="hidden text-xs" style="color: hsl(var(--destructive));"></span>
+          </div>
+        </form>
+      </div>
+
+      <div class="sc-card sc-table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Frequency</th>
+              <th>Target status</th>
+              <th>Occurrences</th>
+              <th>Next run</th>
+              <th>Last run</th>
+              <th>Active</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="scheduler-rows"></tbody>
+        </table>
+      </div>
+
+    </main>
+  </div>
+
+  <script>
+    const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+    const form = document.getElementById('scheduler-form');
+    const frequencyUnitSelect = document.getElementById('frequency-unit');
+    const occurrenceRows = document.getElementById('occurrence-rows');
+    const addOccurrenceBtn = document.getElementById('add-occurrence');
+    const formError = document.getElementById('form-error');
+    const schedulerRows = document.getElementById('scheduler-rows');
+    const timezoneSelect = document.getElementById('timezone-select');
+
+    // Populates the timezone dropdown from the backend's IANA-derived
+    // US list, then auto-selects whatever the browser reports as the
+    // user's own zone — adding it as an extra option first if it's not
+    // already in the US list (e.g. a non-US visitor), so the default
+    // is always correct for whoever is filling out the form.
+    async function initTimezoneSelect() {
+      const resp = await fetch('/timezones');
+      const data = await resp.json();
+      timezoneSelect.innerHTML = '';
+      for (const tz of data.items) {
+        const opt = document.createElement('option');
+        opt.value = tz.value;
+        opt.textContent = tz.value === tz.label ? tz.label : `${tz.label} — ${tz.value}`;
+        timezoneSelect.appendChild(opt);
+      }
+
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected) {
+        const exists = Array.from(timezoneSelect.options).some((o) => o.value === detected);
+        if (!exists) {
+          const opt = document.createElement('option');
+          opt.value = detected;
+          opt.textContent = detected;
+          timezoneSelect.prepend(opt);
+        }
+        timezoneSelect.value = detected;
+      }
+    }
+    initTimezoneSelect();
+
+    function buildOccurrenceRow() {
+      const row = document.createElement('div');
+      row.className = 'flex items-center gap-2 occurrence-row';
+
+      const time = document.createElement('input');
+      time.type = 'time';
+      time.required = true;
+      time.className = 'sc-input time-of-day';
+      row.appendChild(time);
+
+      const dowSelect = document.createElement('select');
+      dowSelect.className = 'sc-select day-of-week hidden';
+      DAY_NAMES.forEach((label, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = label;
+        dowSelect.appendChild(opt);
+      });
+      row.appendChild(dowSelect);
+
+      const domInput = document.createElement('input');
+      domInput.type = 'number';
+      domInput.min = 1;
+      domInput.max = 31;
+      domInput.placeholder = 'Day of month (1-31)';
+      domInput.className = 'sc-input w-40 day-of-month hidden';
+      row.appendChild(domInput);
+
+      const removeBtn = document.createElement('button');
+      removeBtn.type = 'button';
+      removeBtn.textContent = 'Remove';
+      removeBtn.className = 'sc-btn sc-btn-destructive sc-btn-sm';
+      removeBtn.addEventListener('click', () => {
+        if (occurrenceRows.children.length > 1) row.remove();
+      });
+      row.appendChild(removeBtn);
+
+      updateOccurrenceRowVisibility(row);
+      return row;
+    }
+
+    function updateOccurrenceRowVisibility(row) {
+      const unit = frequencyUnitSelect.value;
+      row.querySelector('.day-of-week').classList.toggle('hidden', unit !== 'WEEK');
+      row.querySelector('.day-of-month').classList.toggle('hidden', unit !== 'MONTH');
+    }
+
+    function refreshAllOccurrenceRowVisibility() {
+      for (const row of occurrenceRows.children) updateOccurrenceRowVisibility(row);
+    }
+
+    frequencyUnitSelect.addEventListener('change', refreshAllOccurrenceRowVisibility);
+    addOccurrenceBtn.addEventListener('click', () => occurrenceRows.appendChild(buildOccurrenceRow()));
+    occurrenceRows.appendChild(buildOccurrenceRow());
+
+    function collectOccurrences() {
+      const unit = frequencyUnitSelect.value;
+      return Array.from(occurrenceRows.children).map((row) => {
+        const time_of_day = row.querySelector('.time-of-day').value;
+        const occ = { time_of_day };
+        if (unit === 'WEEK') occ.day_of_week = parseInt(row.querySelector('.day-of-week').value, 10);
+        if (unit === 'MONTH') occ.day_of_month = parseInt(row.querySelector('.day-of-month').value, 10);
+        return occ;
+      });
+    }
+
+    function frequencySummary(scheduler) {
+      const n = scheduler.occurrences.length;
+      const times = scheduler.occurrences.map((o) => {
+        if (scheduler.frequency_unit === 'WEEK') return `${DAY_NAMES[o.day_of_week]} ${o.time_of_day}`;
+        if (scheduler.frequency_unit === 'MONTH') return `day ${o.day_of_month} ${o.time_of_day}`;
+        if (scheduler.frequency_unit === 'HOUR') return `:${o.time_of_day.split(':')[1]}`;
+        return o.time_of_day;
+      });
+      const label = { HOUR: 'Hourly', DAY: 'Daily', WEEK: 'Weekly', MONTH: 'Monthly' }[scheduler.frequency_unit];
+      return `${label} (${n}×) — ${times.join(', ')}`;
+    }
+
+    function fmtDateTime(iso) {
+      return iso ? new Date(iso + 'Z').toLocaleString() : '—';
+    }
+
+    function renderSchedulers(items) {
+      schedulerRows.innerHTML = '';
+      for (const scheduler of items) {
+        const row = document.createElement('tr');
+        row.innerHTML = `
+          <td class="font-medium">${scheduler.name}</td>
+          <td style="color: hsl(var(--muted-foreground));">${frequencySummary(scheduler)}</td>
+          <td style="color: hsl(var(--muted-foreground));">${scheduler.target_status}</td>
+          <td style="color: hsl(var(--muted-foreground));">${scheduler.occurrences.length}</td>
+          <td style="color: hsl(var(--muted-foreground));">${fmtDateTime(scheduler.next_run_at)}</td>
+          <td style="color: hsl(var(--muted-foreground));">${fmtDateTime(scheduler.last_run_at)}</td>
+          <td><input type="checkbox" class="toggle-active" ${scheduler.is_active ? 'checked' : ''}></td>
+          <td><button class="delete-btn sc-btn sc-btn-destructive sc-btn-sm">Delete</button></td>
+        `;
+        row.querySelector('.toggle-active').addEventListener('change', async (e) => {
+          await fetch(`/schedulers/${scheduler.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_active: e.target.checked }),
+          });
+          loadSchedulers();
+        });
+        row.querySelector('.delete-btn').addEventListener('click', async () => {
+          await fetch(`/schedulers/${scheduler.id}`, { method: 'DELETE' });
+          loadSchedulers();
+        });
+        schedulerRows.appendChild(row);
+      }
+    }
+
+    async function loadSchedulers() {
+      const stopLoading = showTableLoading(schedulerRows, 8);
+      const resp = await fetch('/schedulers');
+      const data = await resp.json();
+      stopLoading();
+      renderSchedulers(data.items);
+    }
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      formError.classList.add('hidden');
+      const payload = {
+        name: form.elements.namedItem('name').value,
+        frequency_unit: frequencyUnitSelect.value,
+        target_status: form.elements.namedItem('target_status').value,
+        timezone: form.elements.namedItem('timezone').value || 'UTC',
+        occurrences: collectOccurrences(),
+      };
+      const resp = await fetch('/schedulers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!resp.ok) {
+        const body = await resp.json().catch(() => ({}));
+        formError.textContent = body.detail || `HTTP ${resp.status}`;
+        formError.classList.remove('hidden');
+        return;
+      }
+      form.reset();
+      const detected = Intl.DateTimeFormat().resolvedOptions().timeZone;
+      if (detected && Array.from(timezoneSelect.options).some((o) => o.value === detected)) {
+        timezoneSelect.value = detected;
+      }
+      occurrenceRows.innerHTML = '';
+      occurrenceRows.appendChild(buildOccurrenceRow());
+      loadSchedulers();
+    });
+
+    loadSchedulers();
+  </script>
+</body>
+</html>

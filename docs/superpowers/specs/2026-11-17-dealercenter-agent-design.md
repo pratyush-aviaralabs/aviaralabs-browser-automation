@@ -68,12 +68,32 @@ Webhook/API -> enqueue -> Redis+RQ -> worker process
   LangChain-compatible chat model. Switching OpenAI/Anthropic/Gemini is a
   config change.
 - **DB dialect:** SQLAlchemy models + Alembic migrations, dialect-agnostic
-  types only (no Postgres-only JSONB, etc.). `DBConfig.url` is built from
-  `.env` (`DB_DRIVER=supabase|postgresql|mysql`, host/user/pass/etc.).
-  Local dev points at Supabase's Postgres connection string; prod points at
-  Azure Database for PostgreSQL or MySQL — same models, same migrations.
+  types only (no Postgres-only JSONB, etc.). `DBConfig` reads `DATABASE_URL`
+  directly from `.env` (already provided, Supabase connection string in
+  dev); `DB_BACKEND` is a label for dialect-specific behavior if ever
+  needed, not something a URL gets rebuilt from. Prod points `DATABASE_URL`
+  at Azure Database for PostgreSQL or MySQL — same models, same migrations.
+- **PDF storage:** `StorageConfig` reads `STORAGE_BACKEND` /
+  `STORAGE_LOCAL_PATH` from `.env`. Local disk today; swappable to blob
+  storage later without touching `Invoice.local_pdf_path`, which just
+  stores whatever path/key the active backend returned.
+
+## Workflow as data, not code
+
+Tool *sequence* is itself a row set (`workflows` / `workflow_steps`), and
+each invoice's trip through a sequence is a queryable, resumable record
+(`workflow_runs`, pointing at `current_step_order`). This is what lets a
+future UI retry a single failed step instead of the whole pipeline, and
+lets the sequence be reordered/edited as data instead of a code change.
+The runner that walks `workflow_steps` and writes `workflow_runs` is
+Phase 2 (queue/worker) scope — Phase 1 only lays the schema and ships
+the `Tool` implementations the runner will eventually call.
 
 ## Data model (see Task 3 of Phase 1 plan for exact columns)
+
+`invoices.vin` stores the **full VIN** (not pre-truncated) — the ingestion
+layer receives the full VIN; truncation to last-6 for DealerCenter's search
+box is a `SearchInvoiceTool`-time concern, not a storage decision.
 
 `tenants`, `invoices`, `tool_runs` (one row per tool call: duration_ms,
 llm_cost_usd — 0 for deterministic tools), `recovery_attempts` (LLM calls

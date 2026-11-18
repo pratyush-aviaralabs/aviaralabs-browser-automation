@@ -50,7 +50,22 @@ class Invoice(Base):
     vin: Mapped[str | None] = mapped_column(String(17), nullable=True)
     po_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     stock_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), default="queued")
+    # Widened to 40 — confirmed required (2026-11-18): the ingestion/
+    # workflow-engine status vocabulary includes values up to
+    # PROCESSED_BUT_NEED_TO_VALIDATE (30 chars), well past the original
+    # String(20). See ingestion/status.py for the full vocabulary.
+    status: Mapped[str] = mapped_column(String(40), default="QUEUED")
+    # The upstream system's own id for this invoice (a Mongo ObjectId in
+    # the webhook ingestion case). NOT unique — confirmed required
+    # (2026-11-18): duplicate invoices are accepted deliberately, so
+    # the same external_invoice_id can appear on more than one row.
+    external_invoice_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True, index=True
+    )
+    # The trailing path segment of callback_url, extracted once at
+    # ingestion time so the status-check endpoint can look a row up by
+    # token directly instead of string-matching callback_url every time.
+    callback_token: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     payload_json: Mapped[dict] = mapped_column(JSON, default=dict)
     local_pdf_path: Mapped[str | None] = mapped_column(String(500), nullable=True)
     callback_url: Mapped[str] = mapped_column(String(500))
@@ -174,3 +189,60 @@ class AuthSession(Base):
     device_trusted: Mapped[bool] = mapped_column(Boolean, default=False)
     last_used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Scheduler(Base):
+    """One recurring rule picking up invoices in a given status and
+    queueing them for the workflow run. Multiple can be active at
+    once, independently. target_status is a plain string, not an
+    enum/FK on purpose — confirmed as a deliberate "option" (2026-11-18):
+    expanding to FAILED / PROCESSED_BUT_NEED_TO_VALIDATE later is then a
+    pure validation-layer change, zero migration needed."""
+
+    __tablename__ = "schedulers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    tenant_id: Mapped[int] = mapped_column(ForeignKey("tenants.id"))
+    name: Mapped[str] = mapped_column(String(100))
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    target_status: Mapped[str] = mapped_column(String(40), default="READY_FOR_PROCESSING")
+    frequency_unit: Mapped[str] = mapped_column(String(10))  # HOUR | DAY | WEEK | MONTH
+    timezone: Mapped[str] = mapped_column(String(50), default="UTC")
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # Precomputed earliest upcoming fire time across this scheduler's
+    # occurrences — lets the tick loop query
+    # "WHERE is_active AND next_run_at <= now()" instead of recomputing
+    # cron math for every scheduler on every tick.
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class SchedulerOccurrence(Base):
+    """One fire-point belonging to a Scheduler. The COUNT of these rows
+    for a given scheduler_id is "once/twice/thrice" — no separate
+    counter column to keep in sync with the actual rows."""
+
+    __tablename__ = "scheduler_occurrences"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scheduler_id: Mapped[int] = mapped_column(ForeignKey("schedulers.id"))
+    time_of_day: Mapped[str] = mapped_column(String(5))  # "HH:MM", 24h — for HOUR freq, only MM is used
+    # Only meaningful (and set) when frequency_unit == WEEK.
+    day_of_week: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 0=Mon .. 6=Sun
+    # Only meaningful (and set) when frequency_unit == MONTH.
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1-31
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class SchedulerRun(Base):
+    """Execution log — one row per time a scheduler actually fired.
+    Same auditable-history pattern as WorkflowRun/ToolRun."""
+
+    __tablename__ = "scheduler_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    scheduler_id: Mapped[int] = mapped_column(ForeignKey("schedulers.id"))
+    ran_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    target_status: Mapped[str] = mapped_column(String(40))  # snapshot, in case it changes later
+    invoice_ids_json: Mapped[list] = mapped_column(JSON, default=list)
