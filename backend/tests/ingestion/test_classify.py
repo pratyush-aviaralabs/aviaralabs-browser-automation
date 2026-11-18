@@ -1,4 +1,29 @@
+import pytest
+
 from dealercenter_agent.ingestion.classify import classify_category
+
+
+@pytest.mark.parametrize(
+    "description",
+    [
+        "Oil change and filter",
+        "Tire rotation",
+        "Tyre replacement x4",
+        "Front brake pad replacement",
+        "Battery replacement",
+        "Wheel alignment",
+        "Transmission fluid flush",
+        "Engine diagnostic",
+        "Spark plug replacement",
+        "A/C compressor service",
+        "Headlight bulb replacement",
+        "Wiper blade replacement",
+        "60,000 mile inspection",
+    ],
+)
+def test_classifies_repair_for_common_garage_service_keywords(description):
+    line_items = [{"description": description, "quantity": 1, "unit_price": 1, "total": 1}]
+    assert classify_category(line_items) == "Repair"
 
 
 def test_classifies_repair_when_any_line_item_mentions_repair():
